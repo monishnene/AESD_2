@@ -162,8 +162,13 @@ uart_init()
 Void Fan_update(int8_t value)
 {
     queue_data_t data_send;
+    uint8_t i=0;
     uint32_t time_now =  Clock_getTicks();
     //Semaphore_pend(sem_write, BIOS_WAIT_FOREVER);
+    for(i=0;i<5;i++)
+    {
+        fans[i]=i<=value?1:0;
+    }
     data_send.time_now =  Clock_getTicks();
     data_send.data=value;
     data_send.log_id=LOG_FAN;
