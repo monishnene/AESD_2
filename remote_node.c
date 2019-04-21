@@ -87,27 +87,27 @@
 #define LOGGER_PERIOD 20
 #define THRESHOLD_PERIOD 1000
 #define LED_PERIOD  1000
-#define TEMPERATURE_PERIOD 1000
+#define SENSOR_PERIOD 1000
 #define GAS_PERIOD 1000
 #define HUMIDITY_PERIOD 1000
 #define TEMP_SLAVE_ADDR (0x48)
 #define TEMP_REG_ADDR   (0x00)
+#define UART_PERIOD 1
+#define QUEUE_SIZE 100
 
 //semaphore
-Semaphore_Struct sem_write_struct,sem_read_struct;
-Semaphore_Handle sem_write,sem_read;
-Semaphore_Params sem_write_params,sem_read_params;
+Semaphore_Struct sem_log_struct,sem_read_struct;
+Semaphore_Handle sem_log,sem_read;
+Semaphore_Params sem_log_params,sem_read_params;
 uint8_t log_type;
-Task_Struct led_struct;
-Task_Struct humidity_struct;
+Task_Struct uart_struct;
 Task_Struct gas_struct;
-Task_Struct temperature_struct;
+Task_Struct sensor_struct;
 Task_Struct logger_struct;
 Task_Struct threshold_struct;
-Char led_stack[TASKSTACKSIZE];
 Char logger_stack[TASKSTACKSIZE];
-Char temperature_stack[TASKSTACKSIZE];
-Char humidity_stack[TASKSTACKSIZE];
+Char sensor_stack[TASKSTACKSIZE];
+Char uart_stack[TASKSTACKSIZE];
 Char gas_stack[TASKSTACKSIZE];
 Char threshold_stack[TASKSTACKSIZE];
 uint8_t* logfile;
@@ -122,6 +122,14 @@ UART_Handle uart;
 UART_Params uartParams;
 QueueHandle_t log_queue;
 
+uint8_t* error_msg[]={"The Log Queue is full, Data Lost","Log type not found"};
+
+typedef enum
+{
+    QUEUE_FULL=0,
+    ERROR_LOGTYPE=1,
+}error_t;
+
 typedef enum
 {
     LOG_LED=0,
@@ -130,6 +138,7 @@ typedef enum
     LOG_GAS=3,
     LOG_THRESHOLD=4,
     LOG_FAN=5,
+    LOG_ERROR=6,
 }logtype_t;
 
 typedef struct
@@ -139,12 +148,35 @@ typedef struct
     int32_t time_now;
 }queue_data_t;
 
-exit_handler()
+typedef enum
+{
+    LOG_DATA='A',
+    GET_TEMPERATURE,
+    GET_HUMIDITY,
+    GET_GAS,
+    GET_THRESHOLD,
+    GET_FAN,
+    CHANGE_MODE,
+    CHANGE_TEMPERATURE_THRESHOLD,
+    CHANGE_HUMIDITY_THRESHOLD,
+    CHANGE_GAS_THRESHOLD,
+    BUZZER_ON,
+    BUZZER_OFF,
+    FORCE_CHANGE_FANS,
+}uart_command_t;
+
+typedef struct
+{
+    uart_command_t command_id;
+    int32_t data;
+}uart_data_t;
+
+void exit_handler(void)
 {
     condition=0;
 }
 
-uart_init()
+void uart_init(void)
 {
    /* Create a UART with data processing off. */
    UART_Params_init(&uartParams);
@@ -159,12 +191,30 @@ uart_init()
    }
 }
 
-Void Fan_update(int8_t value)
+void queue_adder(queue_data_t* data_send)
+{
+    if(Semaphore_getCount(sem_read) < QUEUE_SIZE-1)
+    {
+        GPIO_write(Board_LED0,0);
+        xQueueSend(log_queue,( void * )data_send,( TickType_t ) 10 );
+        Semaphore_post(sem_read);
+    }
+    else if(Semaphore_getCount(sem_read) == QUEUE_SIZE-1)
+    {
+        data_send->data=0;
+        data_send->log_id=LOG_ERROR;
+        GPIO_write(Board_LED0,1);
+        xQueueSend(log_queue,( void * )data_send,( TickType_t ) 10 );
+        Semaphore_post(sem_read);
+    }
+}
+
+void Fan_update(int8_t value)
 {
     queue_data_t data_send;
     uint8_t i=0;
     uint32_t time_now =  Clock_getTicks();
-    //Semaphore_pend(sem_write, BIOS_WAIT_FOREVER);
+    //
     for(i=0;i<5;i++)
     {
         fans[i]=i<=value?1:0;
@@ -172,21 +222,115 @@ Void Fan_update(int8_t value)
     data_send.time_now =  Clock_getTicks();
     data_send.data=value;
     data_send.log_id=LOG_FAN;
-    xQueueSend(log_queue,( void * )&data_send,( TickType_t ) 10 );
-    Semaphore_post(sem_read);
+    queue_adder(&data_send);
 }
 
-Void loggerFxn(UArg arg0, UArg arg1)
+void uartFxn(UArg arg0, UArg arg1)
+{
+    uint8_t command;
+    while(condition)
+    {
+        UART_read(uart, &command, 1);
+        switch(command)
+        {
+            case LOG_DATA:
+            {
+                Semaphore_post(sem_log);
+                break;
+            }
+
+            case GET_TEMPERATURE:
+            {
+
+                break;
+            }
+
+            case GET_HUMIDITY:
+            {
+
+                break;
+            }
+
+            case GET_GAS:
+            {
+
+                break;
+            }
+
+            case GET_THRESHOLD:
+            {
+
+                break;
+            }
+
+            case GET_FAN:
+            {
+
+                break;
+            }
+
+            case CHANGE_MODE:
+            {
+
+                break;
+            }
+
+            case CHANGE_TEMPERATURE_THRESHOLD:
+            {
+
+                break;
+            }
+
+            case CHANGE_HUMIDITY_THRESHOLD:
+            {
+
+                break;
+            }
+
+            case CHANGE_GAS_THRESHOLD:
+            {
+
+                break;
+            }
+
+            case BUZZER_ON:
+            {
+
+                break;
+            }
+
+            case BUZZER_OFF:
+            {
+
+                break;
+            }
+
+            case FORCE_CHANGE_FANS:
+            {
+
+                break;
+            }
+
+            default:
+            {
+                break;
+            }
+        }
+    }
+}
+
+void loggerFxn(UArg arg0, UArg arg1)
 {
     queue_data_t received_data;
     while (condition)
     {
-        //  Task_sleep((unsigned int)arg0);
-        //message queue receive
-        Semaphore_pend(sem_read, BIOS_WAIT_FOREVER);
-        xQueueReceive(log_queue, &(received_data), ( TickType_t ) 10 );
-        switch(received_data.log_id)
-        {
+         Task_sleep((unsigned int)arg0);
+         //message queue receive
+         Semaphore_pend(sem_log, BIOS_WAIT_FOREVER);
+         Semaphore_pend(sem_read, BIOS_WAIT_FOREVER);
+         xQueueReceive(log_queue, &(received_data), ( TickType_t ) 10 );
+         switch(received_data.log_id)
+         {
             case LOG_LED:
             {
                 sprintf(msg,"time: %d sec %d msec\tLOG_LED\tled toggle count = %d\n\r",received_data.time_now/1000,received_data.time_now%1000,received_data.data);
@@ -207,7 +351,7 @@ Void loggerFxn(UArg arg0, UArg arg1)
 
             case LOG_GAS:
             {
-                sprintf(msg,"time: %d sec %d msec\tLOG_GAS\tGas Quality: %d%%\n\r",received_data.time_now/1000,received_data.time_now%1000,received_data.data);
+                sprintf(msg,"time: %d sec %d msec\tLOG_GAS\t\tGas Quality: %d%%\n\r",received_data.time_now/1000,received_data.time_now%1000,received_data.data);
                 break;
             }
 
@@ -223,14 +367,24 @@ Void loggerFxn(UArg arg0, UArg arg1)
                 break;
             }
 
-            default:
+            case LOG_ERROR:
             {
-                sprintf(msg,"time: %d sec %d msec\tLOG_TYPE not mentioned\n\r",received_data.time_now/1000,received_data.time_now%1000);
+                sprintf(msg,"time: %d sec %d msec\tLOG_ERROR\t%s\n\r",received_data.time_now/1000,received_data.time_now%1000,error_msg[received_data.data]);
                 break;
             }
-        }
-        UART_write(uart,msg,strlen(msg));
-        //Semaphore_post(sem_write);
+
+            default:
+            {
+                sprintf(msg,"time: %d sec %d msec\tLOG_ERROR\t%s data:%d\n\r",received_data.time_now/1000,received_data.time_now%1000,error_msg[ERROR_LOGTYPE],received_data.data);
+                break;
+            }
+         }
+         if(Semaphore_getCount(sem_read))
+         {
+             Semaphore_post(sem_log);
+         }
+         UART_write(uart,msg,strlen(msg));
+         //Semaphore_post(sem_log);
     }
     free(msg);
 }
@@ -246,25 +400,25 @@ void InitI2C0(void)
     //enable GPIO peripheral that contains I2C 0
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
 
-    // Configure the pin muxing for I2C0 functions on port B2 and B3.
+    //Configure the pin muxing for I2C0 functions on port B2 and B3.
     GPIOPinConfigure(GPIO_PB2_I2C0SCL);
     GPIOPinConfigure(GPIO_PB3_I2C0SDA);
 
-    // Select the I2C function for these pins.
+    //Select the I2C function for these pins.
     GPIOPinTypeI2CSCL(GPIO_PORTB_BASE, GPIO_PIN_2);
     GPIOPinTypeI2C(GPIO_PORTB_BASE, GPIO_PIN_3);
 
-    // Enable and initialize the I2C0 master module.  Use the system clock for
-    // the I2C0 module.  The last parameter sets the I2C data transfer rate.
-    // If false the data rate is set to 100kbps and if true the data rate will
-    // be set to 400kbps.
+    //Enable and initialize the I2C0 master module.  Use the system clock for
+    //the I2C0 module.  The last parameter sets the I2C data transfer rate.
+    //If false the data rate is set to 100kbps and if true the data rate will
+    //be set to 400kbps.
     I2CMasterInitExpClk(I2C0_BASE, SysCtlClockGet(), false);
 
     //clear I2C FIFOs
     HWREG(I2C0_BASE + I2C_O_FIFOCTL) = 80008000;
 }
 
-Void ledtoggleFxn(UArg arg0, UArg arg1)
+void ledtoggleFxn(UArg arg0, UArg arg1)
 {
     static int32_t count=0;
     queue_data_t data_send;
@@ -274,17 +428,14 @@ Void ledtoggleFxn(UArg arg0, UArg arg1)
         Task_sleep((unsigned int)arg0);
         GPIO_toggle(Board_LED1);
         GPIO_toggle(Board_LED0);
-        //Semaphore_pend(sem_write, BIOS_WAIT_FOREVER);
         data_send.time_now =  Clock_getTicks();
         data_send.data=++count;
         data_send.log_id=LOG_LED;
-        xQueueSend(log_queue,( void * )&data_send,( TickType_t ) 10 );
-        flag=LOG_LED;
-        Semaphore_post(sem_read);
+        queue_adder(&data_send);
     }
 }
 
-Void gasFxn(UArg arg0, UArg arg1)
+void gasFxn(UArg arg0, UArg arg1)
 {
     queue_data_t data_send;
     while (condition)
@@ -293,15 +444,12 @@ Void gasFxn(UArg arg0, UArg arg1)
        current_gas=rand()%100;
        data_send.data = current_gas;
        data_send.time_now =  Clock_getTicks();
-       //Semaphore_pend(sem_write, BIOS_WAIT_FOREVER);
        data_send.log_id=LOG_GAS;
-       xQueueSend(log_queue,( void * )&data_send,( TickType_t ) 10 );
-       //insert message queue
-       Semaphore_post(sem_read);
+       queue_adder(&data_send);
     }
 }
 
-Void thresholdFxn(UArg arg0, UArg arg1)
+void thresholdFxn(UArg arg0, UArg arg1)
 {
     uint8_t i=0;
     static uint8_t fans_on=0;
@@ -309,7 +457,7 @@ Void thresholdFxn(UArg arg0, UArg arg1)
     while (condition)
     {
         Task_sleep((unsigned int)arg0);
-        //Semaphore_pend(sem_write, BIOS_WAIT_FOREVER);
+        //
         for(i=0;i<5;i++)
         {
             if((current_temperature<temperature_threshold[i])&&(current_humidity<humidity_threshold[i])&&(current_gas<gas_threshold[i]))
@@ -325,35 +473,18 @@ Void thresholdFxn(UArg arg0, UArg arg1)
         data_send.time_now =  Clock_getTicks();
         data_send.data=rand()%5;
         data_send.log_id=LOG_THRESHOLD;
-        xQueueSend(log_queue,( void * )&data_send,( TickType_t ) 10 );
-        Semaphore_post(sem_read);
+        queue_adder(&data_send);
     }
 }
 
-Void humidityFxn(UArg arg0, UArg arg1)
-{
-    queue_data_t data_send;
-    while (condition)
-    {
-       Task_sleep((unsigned int)arg0);
-       current_humidity=rand()%100;
-       data_send.data = current_humidity;
-       data_send.time_now =  Clock_getTicks();
-       //Semaphore_pend(sem_write, BIOS_WAIT_FOREVER);
-       data_send.log_id=LOG_HUMIDITY;
-       xQueueSend(log_queue,( void * )&data_send,( TickType_t ) 10 );
-       //insert message queue
-       Semaphore_post(sem_read);
-    }
-}
-
-Void temperatureFxn(UArg arg0, UArg arg1)
+void sensorFxn(UArg arg0, UArg arg1)
 {
     queue_data_t data_send;
     int8_t rx_MSB=0,rx_LSB=0;
     while (condition)
     {
         Task_sleep((unsigned int)arg0);
+        //temperature start
         I2CMasterSlaveAddrSet(I2C0_BASE, TEMP_SLAVE_ADDR, false);
 
         //specify register to be read
@@ -388,11 +519,16 @@ Void temperatureFxn(UArg arg0, UArg arg1)
        data_send.data = current_temperature;
        data_send.time_now =  Clock_getTicks();
        data_send.log_id=LOG_TEMPERATURE;
-       //Semaphore_pend(sem_write, BIOS_WAIT_FOREVER);
        flag=LOG_TEMPERATURE;
-       xQueueSend(log_queue,( void * )&data_send,( TickType_t ) 10 );
-       //insert message queue
-       Semaphore_post(sem_read);
+       queue_adder(&data_send);
+       //temperature_end
+       //humidity start
+       current_humidity=rand()%100;
+       data_send.data = current_humidity;
+       data_send.time_now =  Clock_getTicks();
+       data_send.log_id=LOG_HUMIDITY;
+       queue_adder(&data_send);
+       //humidity end
     }
 }
 
@@ -401,31 +537,24 @@ Void temperatureFxn(UArg arg0, UArg arg1)
  */
 int main(void)
 {
-    Task_Params led_task,logger_task,temperature_task,humidity_task,gas_task,threshold_task;
+    Task_Params uart_task,logger_task,sensor_task,gas_task,threshold_task;
     /* Call board init functions */
     Board_initGeneral();
     Board_initGPIO();
     Board_initI2C();
     Board_initUART();
-    InitI2C0();
+    InitI2C0();A
     condition = 1;
-    log_queue = xQueueCreate( 50, sizeof(queue_data_t) );
+    log_queue = xQueueCreate(QUEUE_SIZE, sizeof(queue_data_t));
     msg = (uint8_t*)malloc(STR_SIZE);
 
     //semaphore
-    Semaphore_Params_init(&sem_write_params);
-    Semaphore_construct(&sem_write_struct, 1, &sem_write_params);
-    sem_write = Semaphore_handle(&sem_write_struct);
+    Semaphore_Params_init(&sem_log_params);
+    Semaphore_construct(&sem_log_struct, 0, &sem_log_params);
+    sem_log = Semaphore_handle(&sem_log_struct);
     Semaphore_Params_init(&sem_read_params);
     Semaphore_construct(&sem_read_struct, 0, &sem_read_params);
     sem_read = Semaphore_handle(&sem_read_struct);
-
-    /* Construct led Task  thread */
-//    Task_Params_init(&led_task);
-//    led_task.arg0 = LED_PERIOD;
-//    led_task.stackSize = TASKSTACKSIZE;
-//    led_task.stack = &led_stack;
-//    Task_construct(&led_struct, (Task_FuncPtr)ledtoggleFxn, &led_task, NULL);
 
     /* Construct logger Task  thread */
     Task_Params_init(&logger_task);
@@ -434,12 +563,12 @@ int main(void)
     logger_task.stack = &logger_stack;
     Task_construct(&logger_struct, (Task_FuncPtr)loggerFxn, &logger_task, NULL);
 
-    /* Construct humidity Task  thread */
-    Task_Params_init(&humidity_task);
-    humidity_task.arg0 = HUMIDITY_PERIOD;
-    humidity_task.stackSize = TASKSTACKSIZE;
-    humidity_task.stack = &humidity_stack;
-    Task_construct(&humidity_struct, (Task_FuncPtr)humidityFxn, &humidity_task, NULL);
+    /* Construct uart Task  thread */
+    Task_Params_init(&uart_task);
+    uart_task.arg0 = UART_PERIOD;
+    uart_task.stackSize = TASKSTACKSIZE;
+    uart_task.stack = &uart_stack;
+    Task_construct(&uart_struct, (Task_FuncPtr)uartFxn, &uart_task, NULL);
 
     /* Construct threshold  thread */
     Task_Params_init(&threshold_task);
@@ -455,12 +584,12 @@ int main(void)
     gas_task.stack = &gas_stack;
     Task_construct(&gas_struct, (Task_FuncPtr)gasFxn, &gas_task, NULL);
 
-    /* Construct temperature  thread */
-    Task_Params_init(&temperature_task);
-    temperature_task.arg0 = TEMPERATURE_PERIOD;
-    temperature_task.stackSize = TASKSTACKSIZE;
-    temperature_task.stack = &temperature_stack;
-    Task_construct(&temperature_struct, (Task_FuncPtr)temperatureFxn, &temperature_task, NULL);
+    /* Construct sensor  thread */
+    Task_Params_init(&sensor_task);
+    sensor_task.arg0 = SENSOR_PERIOD;
+    sensor_task.stackSize = TASKSTACKSIZE;
+    sensor_task.stack = &sensor_stack;
+    Task_construct(&sensor_struct, (Task_FuncPtr)sensorFxn, &sensor_task, NULL);
 
      /* Turn on user LED */
 
