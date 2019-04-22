@@ -94,6 +94,8 @@
 #define TEMP_REG_ADDR   (0x00)
 #define UART_PERIOD 1
 #define QUEUE_SIZE 100
+#define AUTOMATIC_MODE 1
+#define MANUAL_MODE 0
 
 //semaphore
 Semaphore_Struct sem_log_struct,sem_read_struct;
@@ -111,8 +113,10 @@ Char uart_stack[TASKSTACKSIZE];
 Char gas_stack[TASKSTACKSIZE];
 Char threshold_stack[TASKSTACKSIZE];
 uint8_t* logfile;
-int8_t flag;
 uint8_t* msg;
+uint8_t fans_on=0;
+Bool buzzer=0;
+Bool remote_mode = AUTOMATIC_MODE;
 int32_t current_temperature,current_humidity,current_gas,condition;
 Bool fans[5]={0,0,0,0,0};
 int32_t temperature_threshold[5]={20,25,30,35,50};
@@ -137,8 +141,9 @@ typedef enum
     LOG_HUMIDITY=2,
     LOG_GAS=3,
     LOG_THRESHOLD=4,
-    LOG_FAN=5,
-    LOG_ERROR=6,
+    LOG_COMMAND=5,
+    LOG_FAN=6,
+    LOG_ERROR=7,
 }logtype_t;
 
 typedef struct
@@ -151,24 +156,26 @@ typedef struct
 typedef enum
 {
     LOG_DATA='A',
-    GET_TEMPERATURE,
-    GET_HUMIDITY,
-    GET_GAS,
-    GET_THRESHOLD,
-    GET_FAN,
-    CHANGE_MODE,
-    CHANGE_TEMPERATURE_THRESHOLD,
-    CHANGE_HUMIDITY_THRESHOLD,
-    CHANGE_GAS_THRESHOLD,
-    BUZZER_ON,
-    BUZZER_OFF,
-    FORCE_CHANGE_FANS,
+    GET_TEMPERATURE='B',
+    GET_HUMIDITY='C',
+    GET_GAS='D',
+    GET_THRESHOLD='E',
+    GET_FAN='F',
+    CHANGE_MODE='G',
+    CHANGE_TEMPERATURE_THRESHOLD='H',
+    CHANGE_HUMIDITY_THRESHOLD='I',
+    CHANGE_GAS_THRESHOLD='J',
+    BUZZER_ON='K',
+    BUZZER_OFF='L',
+    FORCE_CHANGE_FANS='M',
+    GET_BUZZER='N',
 }uart_command_t;
 
 typedef struct
 {
     uart_command_t command_id;
     int32_t data;
+    int32_t time_now;
 }uart_data_t;
 
 void exit_handler(void)
@@ -193,6 +200,7 @@ void uart_init(void)
 
 void queue_adder(queue_data_t* data_send)
 {
+    data_send->time_now =  Clock_getTicks();
     if(Semaphore_getCount(sem_read) < QUEUE_SIZE-1)
     {
         GPIO_write(Board_LED0,0);
@@ -209,17 +217,36 @@ void queue_adder(queue_data_t* data_send)
     }
 }
 
+void buzzer_control(void)
+{
+    if(buzzer)
+    {
+        //buzzer on
+    }
+    else
+    {
+        //buzzer off
+    }
+}
+
 void Fan_update(int8_t value)
 {
     queue_data_t data_send;
     uint8_t i=0;
-    uint32_t time_now =  Clock_getTicks();
-    //
     for(i=0;i<5;i++)
     {
         fans[i]=i<=value?1:0;
     }
-    data_send.time_now =  Clock_getTicks();
+    if(fans[4])
+    {
+        buzzer=1;
+        buzzer_control();
+    }
+    else
+    {
+        buzzer=0;
+        buzzer_control();
+    }
     data_send.data=value;
     data_send.log_id=LOG_FAN;
     queue_adder(&data_send);
@@ -228,9 +255,17 @@ void Fan_update(int8_t value)
 void uartFxn(UArg arg0, UArg arg1)
 {
     uint8_t command;
+    uart_data_t received_data,send_data;
+    queue_data_t data_log;
     while(condition)
     {
         UART_read(uart, &command, 1);
+        //UART_read(uart, &recevied_data, sizeof(uart_data_t));
+        send_data.command_id=received_data.command_id;
+        send_data.time_now=Clock_getTicks();
+        data_log.log_id=LOG_COMMAND;
+        data_log.data=received_data.command_id;
+        queue_adder(&data_log);
         switch(command)
         {
             case LOG_DATA:
@@ -241,73 +276,98 @@ void uartFxn(UArg arg0, UArg arg1)
 
             case GET_TEMPERATURE:
             {
-
+                send_data.data=current_temperature;
+                UART_write(uart, &send_data, sizeof(uart_data_t));
                 break;
             }
 
             case GET_HUMIDITY:
             {
-
+                send_data.data=current_humidity;
+                UART_write(uart, &send_data, sizeof(uart_data_t));
                 break;
             }
 
             case GET_GAS:
             {
-
+                send_data.data=current_gas;
+                UART_write(uart, &send_data, sizeof(uart_data_t));
                 break;
             }
 
             case GET_THRESHOLD:
             {
-
+                UART_write(uart, &temperature_threshold, sizeof(temperature_threshold));
+                UART_write(uart, &humidity_threshold, sizeof(humidity_threshold));
+                UART_write(uart, &gas_threshold, sizeof(gas_threshold));
                 break;
             }
 
             case GET_FAN:
             {
+                send_data.data=fans_on;
+                UART_write(uart, &send_data, sizeof(uart_data_t));
+                break;
+            }
 
+            case GET_BUZZER:
+            {
+                send_data.data=buzzer;
+                UART_write(uart, &send_data, sizeof(uart_data_t));
                 break;
             }
 
             case CHANGE_MODE:
             {
-
+                if(received_data.data<2)
+                {
+                    remote_mode=received_data.data;
+                }
                 break;
             }
 
             case CHANGE_TEMPERATURE_THRESHOLD:
             {
-
+                UART_read(uart, &temperature_threshold, sizeof(temperature_threshold));
                 break;
             }
 
             case CHANGE_HUMIDITY_THRESHOLD:
             {
-
+                UART_write(uart, &humidity_threshold, sizeof(temperature_threshold));
                 break;
             }
 
             case CHANGE_GAS_THRESHOLD:
             {
-
+                UART_write(uart, &gas_threshold, sizeof(temperature_threshold));
                 break;
             }
 
             case BUZZER_ON:
             {
-
+                remote_mode=MANUAL_MODE;
+                buzzer=1;
+                //buzzer_control();
                 break;
             }
 
             case BUZZER_OFF:
             {
-
+                remote_mode=MANUAL_MODE;
+                buzzer=0;
+                //buzzer_control();
                 break;
             }
 
             case FORCE_CHANGE_FANS:
             {
-
+                if(received_data.data<6)
+                {
+                    remote_mode=MANUAL_MODE;
+                    fans_on=received_data.data;
+                    Fan_update(fans_on);
+                }
                 break;
             }
 
@@ -321,6 +381,8 @@ void uartFxn(UArg arg0, UArg arg1)
 
 void loggerFxn(UArg arg0, UArg arg1)
 {
+    uint8_t* time_str = (uint8_t*)malloc(30);
+    uint8_t timeslice;
     queue_data_t received_data;
     while (condition)
     {
@@ -329,53 +391,62 @@ void loggerFxn(UArg arg0, UArg arg1)
          Semaphore_pend(sem_log, BIOS_WAIT_FOREVER);
          Semaphore_pend(sem_read, BIOS_WAIT_FOREVER);
          xQueueReceive(log_queue, &(received_data), ( TickType_t ) 10 );
+         sprintf(time_str,"time: %d sec %d msec\t",received_data.time_now/1000,received_data.time_now%1000);
+         strcpy(msg,time_str);
+         timeslice=strlen(time_str);
          switch(received_data.log_id)
          {
             case LOG_LED:
             {
-                sprintf(msg,"time: %d sec %d msec\tLOG_LED\tled toggle count = %d\n\r",received_data.time_now/1000,received_data.time_now%1000,received_data.data);
+                sprintf(msg+timeslice,"LOG_LED\tled toggle count = %d\n\r",received_data.data);
                 break;
             }
 
             case LOG_TEMPERATURE:
             {
-                sprintf(msg,"time: %d sec %d msec\tLOG_TEMPERATURE\tTemperature: %dC, %dF, %dK\n\r",received_data.time_now/1000,received_data.time_now%1000,received_data.data,((received_data.data*9)/5)+32,received_data.data+273);
+                sprintf(msg+timeslice,"LOG_TEMPERATURE\tTemperature: %dC, %dF, %dK\n\r",received_data.data,((received_data.data*9)/5)+32,received_data.data+273);
+                break;
+            }
+
+            case LOG_COMMAND:
+            {
+                sprintf(msg+timeslice,"LOG_COMMAND\tCommand received: %c\n\r",received_data.data);
                 break;
             }
 
             case LOG_HUMIDITY:
             {
-                sprintf(msg,"time: %d sec %d msec\tLOG_HUMIDITY\tHumidity: %d%%\n\r",received_data.time_now/1000,received_data.time_now%1000,received_data.data);
+                sprintf(msg+timeslice,"LOG_HUMIDITY\tHumidity: %d%%\n\r",received_data.data);
                 break;
             }
 
             case LOG_GAS:
             {
-                sprintf(msg,"time: %d sec %d msec\tLOG_GAS\t\tGas Quality: %d%%\n\r",received_data.time_now/1000,received_data.time_now%1000,received_data.data);
+                sprintf(msg+timeslice,"LOG_GAS\t\tGas Quality: %d%%\n\r",received_data.data);
                 break;
             }
 
             case LOG_FAN:
             {
-                sprintf(msg,"time: %d sec %d msec\tLOG_FAN\tFans ON: %d\n\r",received_data.time_now/1000,received_data.time_now%1000,received_data.data);
+                sprintf(msg+timeslice,"LOG_FAN\tFans ON: %d\n\r",received_data.data);
                 break;
             }
 
             case LOG_THRESHOLD:
             {
-                sprintf(msg,"time: %d sec %d msec\tLOG_THRESHOLD\tTHRESHOLD CHECKED\n\r",received_data.time_now/1000,received_data.time_now%1000);
+                sprintf(msg+timeslice,"LOG_THRESHOLD\tTHRESHOLD CHECKED\n\r");
                 break;
             }
 
             case LOG_ERROR:
             {
-                sprintf(msg,"time: %d sec %d msec\tLOG_ERROR\t%s\n\r",received_data.time_now/1000,received_data.time_now%1000,error_msg[received_data.data]);
+                sprintf(msg+timeslice,"LOG_ERROR\t%s\n\r",error_msg[received_data.data]);
                 break;
             }
 
             default:
             {
-                sprintf(msg,"time: %d sec %d msec\tLOG_ERROR\t%s data:%d\n\r",received_data.time_now/1000,received_data.time_now%1000,error_msg[ERROR_LOGTYPE],received_data.data);
+                sprintf(msg+timeslice,"LOG_ERROR\t%s data:%d\n\r",error_msg[ERROR_LOGTYPE],received_data.data);
                 break;
             }
          }
@@ -383,8 +454,12 @@ void loggerFxn(UArg arg0, UArg arg1)
          {
              Semaphore_post(sem_log);
          }
+         else
+         {
+             UART_write(uart,msg,strlen(msg));
+             sprintf(msg+timeslice,"LOG_END\n\r");
+         }
          UART_write(uart,msg,strlen(msg));
-         //Semaphore_post(sem_log);
     }
     free(msg);
 }
@@ -428,7 +503,6 @@ void ledtoggleFxn(UArg arg0, UArg arg1)
         Task_sleep((unsigned int)arg0);
         GPIO_toggle(Board_LED1);
         GPIO_toggle(Board_LED0);
-        data_send.time_now =  Clock_getTicks();
         data_send.data=++count;
         data_send.log_id=LOG_LED;
         queue_adder(&data_send);
@@ -443,7 +517,6 @@ void gasFxn(UArg arg0, UArg arg1)
        Task_sleep((unsigned int)arg0);
        current_gas=rand()%100;
        data_send.data = current_gas;
-       data_send.time_now =  Clock_getTicks();
        data_send.log_id=LOG_GAS;
        queue_adder(&data_send);
     }
@@ -452,7 +525,6 @@ void gasFxn(UArg arg0, UArg arg1)
 void thresholdFxn(UArg arg0, UArg arg1)
 {
     uint8_t i=0;
-    static uint8_t fans_on=0;
     queue_data_t data_send;
     while (condition)
     {
@@ -465,12 +537,11 @@ void thresholdFxn(UArg arg0, UArg arg1)
                 break;
             }
         }
-        if(i!=fans_on)
+        if((i!=fans_on)&&remote_mode)
         {
             fans_on=i;
             Fan_update(fans_on);
         }
-        data_send.time_now =  Clock_getTicks();
         data_send.data=rand()%5;
         data_send.log_id=LOG_THRESHOLD;
         queue_adder(&data_send);
@@ -517,15 +588,12 @@ void sensorFxn(UArg arg0, UArg arg1)
        rx_LSB=I2CMasterDataGet(I2C0_BASE);
        current_temperature=(((rx_MSB << 8) | rx_LSB) >> 4)/16.0;
        data_send.data = current_temperature;
-       data_send.time_now =  Clock_getTicks();
        data_send.log_id=LOG_TEMPERATURE;
-       flag=LOG_TEMPERATURE;
        queue_adder(&data_send);
        //temperature_end
        //humidity start
        current_humidity=rand()%100;
        data_send.data = current_humidity;
-       data_send.time_now =  Clock_getTicks();
        data_send.log_id=LOG_HUMIDITY;
        queue_adder(&data_send);
        //humidity end
@@ -543,7 +611,7 @@ int main(void)
     Board_initGPIO();
     Board_initI2C();
     Board_initUART();
-    InitI2C0();A
+    InitI2C0();
     condition = 1;
     log_queue = xQueueCreate(QUEUE_SIZE, sizeof(queue_data_t));
     msg = (uint8_t*)malloc(STR_SIZE);
