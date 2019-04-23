@@ -497,49 +497,6 @@ void InitI2C0(void)
     HWREG(I2C0_BASE + I2C_O_FIFOCTL) = 80008000;
 }
 
-int temperature_func(int register_addr)
-{
-    int temp_val;
-    I2CMasterSlaveAddrSet(I2C0_BASE, SI7021_SLAVE_ADDRESS, false);
-    I2CMasterDataPut(I2C0_BASE, register_addr);
-    I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_SEND);
-    while(I2CMasterBusy(I2C0_BASE));
-    I2CMasterSlaveAddrSet(I2C0_BASE,SI7021_SLAVE_ADDRESS,true);
-    I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
-    while(I2CMasterBusy(I2C0_BASE));
-    uint16_t temperature_data_op[2];
-    uint32_t rh, temporary;
-    temperature_data_op[0]= I2CMasterDataGet(I2C0_BASE);
-    I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
-    while(I2CMasterBusy(I2C0_BASE));
-    temperature_data_op[1]= I2CMasterDataGet(I2C0_BASE);
-    temporary= temperature_data_op[0]<<8;
-    rh=(temporary|temperature_data_op[1]);
-    temp_val= (((rh*175.72)/65536)-46.85);
-    return temp_val;
-}
-
-int humidity_func(int register_addr)
-{
-    int humid_val;
-    I2CMasterSlaveAddrSet(I2C0_BASE, SI7021_SLAVE_ADDRESS, false);
-    I2CMasterDataPut(I2C0_BASE, register_addr);
-    I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_SEND);
-    while(I2CMasterBusy(I2C0_BASE));
-    I2CMasterSlaveAddrSet(I2C0_BASE,SI7021_SLAVE_ADDRESS,true);
-    I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
-    while(I2CMasterBusy(I2C0_BASE));
-    uint16_t humidity_data_op[2];
-    uint32_t rh, temporary;
-    humidity_data_op[0]= I2CMasterDataGet(I2C0_BASE);
-    I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
-    while(I2CMasterBusy(I2C0_BASE));
-    humidity_data_op[1]= I2CMasterDataGet(I2C0_BASE);
-    temporary= humidity_data_op[0]<<8;
-    rh=(temporary|humidity_data_op[1]);
-    humid_val= (((rh*125)/65536)-6);
-    return humid_val;
-}
 void ledtoggleFxn(UArg arg0, UArg arg1)
 {
     static int32_t count=0;
@@ -597,19 +554,42 @@ void thresholdFxn(UArg arg0, UArg arg1)
 
 void sensorFxn(UArg arg0, UArg arg1)
 {
+    uint16_t data_op[2];
     queue_data_t data_send;
-    int8_t rx_MSB=0,rx_LSB=0;
     while (condition)
     {
-        Task_sleep((unsigned int)arg0);
-       current_temperature=temperature_func(TEMP_ADDRESS);//replace this
-       data_send.data = current_temperature;
+       Task_sleep((unsigned int)arg0);
+       //tem[erature start
+       I2CMasterSlaveAddrSet(I2C0_BASE, SI7021_SLAVE_ADDRESS, false);
+       I2CMasterDataPut(I2C0_BASE,TEMP_ADDRESS);
+       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_SEND);
+       while(I2CMasterBusy(I2C0_BASE));
+       I2CMasterSlaveAddrSet(I2C0_BASE,SI7021_SLAVE_ADDRESS,true);
+       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
+       while(I2CMasterBusy(I2C0_BASE));
+       data_op[0]=I2CMasterDataGet(I2C0_BASE);
+       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
+       while(I2CMasterBusy(I2C0_BASE));
+       data_op[1]=I2CMasterDataGet(I2C0_BASE);
+       current_temperature=((((data_op[0]<<8|data_op[1])*175.72)/65536)-46.85);//replace this
+       data_send.data=current_temperature;
        data_send.log_id=LOG_TEMPERATURE;
        queue_adder(&data_send);
-       //temperature_end
+       //temperature end
        //humidity start
-       current_humidity= humidity_func(HUMIDITY_ADDRESS);//replace this
-       data_send.data = current_humidity;
+       I2CMasterSlaveAddrSet(I2C0_BASE, SI7021_SLAVE_ADDRESS, false);
+       I2CMasterDataPut(I2C0_BASE, HUMIDITY_ADDRESS);
+       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_SEND);
+       while(I2CMasterBusy(I2C0_BASE));
+       I2CMasterSlaveAddrSet(I2C0_BASE,SI7021_SLAVE_ADDRESS,true);
+       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
+       while(I2CMasterBusy(I2C0_BASE));
+       data_op[0]=I2CMasterDataGet(I2C0_BASE);
+       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
+       while(I2CMasterBusy(I2C0_BASE));
+       data_op[1]=I2CMasterDataGet(I2C0_BASE);
+       current_humidity=(((data_op[0]<<8|data_op[1])*125)/65536)-6;
+       data_send.data=current_humidity;
        data_send.log_id=LOG_HUMIDITY;
        queue_adder(&data_send);
        //humidity end
