@@ -571,7 +571,7 @@ void sensorFxn(UArg arg0, UArg arg1)
        I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
        while(I2CMasterBusy(I2C0_BASE));
        data_op[1]=I2CMasterDataGet(I2C0_BASE);
-       current_temperature=((((data_op[0]<<8|data_op[1])*175.72)/65536)-46.85);//replace this
+       current_temperature=((((data_op[0]<<8|data_op[1])*176)/65536)-47);//replace this
        data_send.data=current_temperature;
        data_send.log_id=LOG_TEMPERATURE;
        queue_adder(&data_send);
