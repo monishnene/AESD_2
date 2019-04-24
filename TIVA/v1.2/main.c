@@ -96,9 +96,6 @@
 #define QUEUE_SIZE 100
 #define AUTOMATIC_MODE 1
 #define MANUAL_MODE 0
-#define SI7021_SLAVE_ADDRESS (0x40)
-#define TEMP_ADDRESS (0xE3)
-#define HUMIDITY_ADDRESS (0xE5)
 
 //semaphore
 Semaphore_Struct sem_log_struct,sem_read_struct;
@@ -120,8 +117,7 @@ uint8_t* msg;
 uint8_t fans_on=0;
 Bool buzzer=0;
 Bool remote_mode = AUTOMATIC_MODE;
-int32_t current_temperature,current_gas,condition;
-double current_humidity;
+int32_t current_temperature,current_humidity,current_gas,condition;
 Bool fans[5]={0,0,0,0,0};
 int32_t temperature_threshold[5]={20,25,30,35,50};
 int32_t humidity_threshold[5]={20,40,60,80,90};
@@ -195,7 +191,7 @@ void uart_init(void)
    uartParams.readDataMode = UART_DATA_BINARY;
    uartParams.readReturnMode = UART_RETURN_FULL;
    uartParams.readEcho = UART_ECHO_OFF;
-   uartParams.baudRate = 115200;
+   uartParams.baudRate = 9600;
    uart = UART_open(Board_UART0, &uartParams);
    if (uart == NULL) {
        System_abort("Error opening the UART");
@@ -519,7 +515,7 @@ void gasFxn(UArg arg0, UArg arg1)
     while (condition)
     {
        Task_sleep((unsigned int)arg0);
-       current_gas=rand()%100;//replace this
+       current_gas=rand()%100;
        data_send.data = current_gas;
        data_send.log_id=LOG_GAS;
        queue_adder(&data_send);
@@ -554,42 +550,50 @@ void thresholdFxn(UArg arg0, UArg arg1)
 
 void sensorFxn(UArg arg0, UArg arg1)
 {
-    uint16_t data_op[2];
     queue_data_t data_send;
+    int8_t rx_MSB=0,rx_LSB=0;
     while (condition)
     {
-       Task_sleep((unsigned int)arg0);
-       //tem[erature start
-       I2CMasterSlaveAddrSet(I2C0_BASE, SI7021_SLAVE_ADDRESS, false);
-       I2CMasterDataPut(I2C0_BASE,TEMP_ADDRESS);
-       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_SEND);
+        Task_sleep((unsigned int)arg0);
+        //temperature start
+        I2CMasterSlaveAddrSet(I2C0_BASE, TEMP_SLAVE_ADDR, false);
+
+        //specify register to be read
+        I2CMasterDataPut(I2C0_BASE, TEMP_REG_ADDR);
+
+        //send control byte and register address byte to slave device
+        I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_BURST_SEND_START);
+
+        //wait for MCU to finish transaction
+        while(I2CMasterBusy(I2C0_BASE));
+
+        //specify that we are going to read from slave device
+        I2CMasterSlaveAddrSet(I2C0_BASE, TEMP_SLAVE_ADDR, true);
+
+        //send control byte and read from the register we
+        //specified
+        I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_SINGLE_RECEIVE);
+
+        //wait for MCU to finish transaction
+        while(I2CMasterBusy(I2C0_BASE));
+
+        //return data pulled from the specified register
+        rx_MSB=I2CMasterDataGet(I2C0_BASE);
+
+        //send control byte and read from the register we
+       //specified
+       I2CMasterControl(I2C0_BASE, I2C_MASTER_CMD_SINGLE_RECEIVE);
+       //wait for MCU to finish transaction
        while(I2CMasterBusy(I2C0_BASE));
-       I2CMasterSlaveAddrSet(I2C0_BASE,SI7021_SLAVE_ADDRESS,true);
-       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
-       while(I2CMasterBusy(I2C0_BASE));
-       data_op[0]=I2CMasterDataGet(I2C0_BASE);
-       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
-       while(I2CMasterBusy(I2C0_BASE));
-       data_op[1]=I2CMasterDataGet(I2C0_BASE);
-       current_temperature=((((data_op[0]<<8|data_op[1])*176)/65536)-47);//replace this
-       data_send.data=current_temperature;
+       rx_LSB=I2CMasterDataGet(I2C0_BASE);
+       current_temperature=(((rx_MSB << 8) | rx_LSB) >> 4)/16.0;
+       data_send.data = current_temperature;
        data_send.log_id=LOG_TEMPERATURE;
        queue_adder(&data_send);
-       //temperature end
+       //temperature_end
        //humidity start
-       I2CMasterSlaveAddrSet(I2C0_BASE, SI7021_SLAVE_ADDRESS, false);
-       I2CMasterDataPut(I2C0_BASE, HUMIDITY_ADDRESS);
-       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_SEND);
-       while(I2CMasterBusy(I2C0_BASE));
-       I2CMasterSlaveAddrSet(I2C0_BASE,SI7021_SLAVE_ADDRESS,true);
-       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
-       while(I2CMasterBusy(I2C0_BASE));
-       data_op[0]=I2CMasterDataGet(I2C0_BASE);
-       I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_RECEIVE);
-       while(I2CMasterBusy(I2C0_BASE));
-       data_op[1]=I2CMasterDataGet(I2C0_BASE);
-       current_humidity=(((data_op[0]<<8|data_op[1])*125)/65536)-6;
-       data_send.data=current_humidity;
+       current_humidity=rand()%100;
+       data_send.data = current_humidity;
        data_send.log_id=LOG_HUMIDITY;
        queue_adder(&data_send);
        //humidity end
