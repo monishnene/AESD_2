@@ -521,18 +521,18 @@ void gasFxn(UArg arg0, UArg arg1)
     while (condition)
     {
        Task_sleep((unsigned int)arg0);
-       SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);
-       SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);
-       while(!SysCtlPeripheralReady(SYSCTL_PERIPH_ADC0));
-       GPIOPinTypeADC(GPIO_PORTE_BASE,GPIO_PIN_3);
-       ADCSequenceConfigure(ADC0_BASE,3,ADC_TRIGGER_PROCESSOR,0);
-       ADCSequenceStepConfigure(ADC0_BASE,3,0,ADC_CTL_CH0|ADC_CTL_IE|ADC_CTL_END);
-       ADCSequenceEnable(ADC0_BASE,3);
-       ADCProcessorTrigger(ADC0_BASE,3);
-       while(!ADCIntStatus(ADC0_BASE,3,false));
-       ADCIntClear(ADC0_BASE,3);
-       int data_op[1];
-       ADCSequenceDataGet(ADC0_BASE,3,data_op);
+       SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC1);
+       while(!SysCtlPeripheralReady(SYSCTL_PERIPH_ADC1));
+       GPIOPinTypeADC(GPIO_PORTE_BASE,GPIO_PIN_2);
+       ADCSequenceConfigure(ADC1_BASE,3,ADC_TRIGGER_PROCESSOR,0);
+       ADCSequenceStepConfigure(ADC1_BASE,3,0,ADC_CTL_CH1|ADC_CTL_IE|ADC_CTL_END);
+      // MAP_ADCReferenceSet(ADC0_BASE, ADC_REF_EXT_3V);
+       ADCSequenceEnable(ADC1_BASE,3);
+       ADCProcessorTrigger(ADC1_BASE,3);
+       while(!ADCIntStatus(ADC1_BASE,3,false));
+       ADCIntClear(ADC1_BASE,3);
+       uint32_t data_op[1];
+       ADCSequenceDataGet(ADC1_BASE,3,data_op);
        current_gas = (((data_op[0]*3.3)/4095)*1.0698);
        current_gas = 3.027*(pow(2.718,current_gas));
        data_send.data = current_gas;
