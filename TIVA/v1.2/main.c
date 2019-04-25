@@ -428,7 +428,7 @@ void loggerFxn(UArg arg0, UArg arg1)
 
             case LOG_GAS:
             {
-                sprintf(msg+timeslice,"LOG_GAS\t\tGas Quality: %d%%\n\r",received_data.data);
+                sprintf(msg+timeslice,"LOG_GAS\t\tThe CO value is %d ppm\n\r",received_data.data);
                 break;
             }
 
@@ -526,7 +526,6 @@ void gasFxn(UArg arg0, UArg arg1)
        GPIOPinTypeADC(GPIO_PORTE_BASE,GPIO_PIN_2);
        ADCSequenceConfigure(ADC1_BASE,3,ADC_TRIGGER_PROCESSOR,0);
        ADCSequenceStepConfigure(ADC1_BASE,3,0,ADC_CTL_CH1|ADC_CTL_IE|ADC_CTL_END);
-      // MAP_ADCReferenceSet(ADC0_BASE, ADC_REF_EXT_3V);
        ADCSequenceEnable(ADC1_BASE,3);
        ADCProcessorTrigger(ADC1_BASE,3);
        while(!ADCIntStatus(ADC1_BASE,3,false));
