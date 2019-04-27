@@ -233,14 +233,14 @@ void UART_send(char* ptr, int length)
 
 void queue_adder(queue_data_t* data_send)
 {
-    data_send->time_now =  Clock_getTicks();
-    if((sem_read) < QUEUE_SIZE-1)
+    data_send->time_now =  xTaskGetTickCount();
+    if(uxSemaphoreGetCount(sem_read) < QUEUE_SIZE-1)
     {
         LEDWrite(0x0F, 0x00);
         xQueueSend(log_queue,( void * )data_send,( TickType_t ) 10 );
         xSemaphoreGive(sem_read);
     }
-    else if(Semaphore_getCount(sem_read) == QUEUE_SIZE-1)
+    else if(uxSemaphoreGetCount(sem_read) == QUEUE_SIZE-1)
     {
         data_send->data=0;
         data_send->log_id=LOG_ERROR;
@@ -288,15 +288,14 @@ void Fan_update(int8_t value)
 void uartFxn(void* ptr)
 {
     uint8_t command;
-    char* send_data;
-    //uart_data_t received_data,send_data;
+    uart_data_t received_data,send_data;
     queue_data_t data_log;
     while(condition)
     {
-        UART_read(uart, &command, 1);
+        //UART_read(uart, &command, 1);
         //UART_read(uart, &recevied_data, sizeof(uart_data_t));
         send_data.command_id=received_data.command_id;
-        send_data.time_now=Clock_getTicks();
+        send_data.time_now=xTaskGetTickCount();
         data_log.log_id=LOG_COMMAND;
         data_log.data=received_data.command_id;
         queue_adder(&data_log);
@@ -311,43 +310,43 @@ void uartFxn(void* ptr)
             case GET_TEMPERATURE:
             {
                 send_data.data=current_temperature;
-                UART_send(uart, &send_data, sizeof(uart_data_t));
+                UARTprintf("The temperature is %d",send_data.data);
                 break;
             }
 
             case GET_HUMIDITY:
             {
                 send_data.data=current_humidity;
-                UART_write(uart, &send_data, sizeof(uart_data_t));
+                UARTprintf("The humidity is %d",send_data.data);
                 break;
             }
 
             case GET_GAS:
             {
                 send_data.data=current_gas;
-                UART_write(uart, &send_data, sizeof(uart_data_t));
+                UARTprintf("The gas data is %d", send_data.data);
                 break;
             }
 
             case GET_THRESHOLD:
             {
-                UART_write(uart, &temperature_threshold, sizeof(temperature_threshold));
-                UART_write(uart, &humidity_threshold, sizeof(humidity_threshold));
-                UART_write(uart, &gas_threshold, sizeof(gas_threshold));
+                UARTprintf("The temperature threshold is %d", temperature_threshold);
+                UARTprintf("The humidity threshold is %d", humidity_threshold);
+                UARTprintf("The gas threshold is %d", gas_threshold);
                 break;
             }
 
             case GET_FAN:
             {
                 send_data.data=fans_on;
-                UART_write(uart, &send_data, sizeof(uart_data_t));
+                UARTprintf("The fans on is %d", send_data.data);
                 break;
             }
 
             case GET_BUZZER:
             {
                 send_data.data=buzzer;
-                UART_write(uart, &send_data, sizeof(uart_data_t));
+                UARTprintf("The buzzer is %d", send_data.data);
                 break;
             }
 
@@ -362,19 +361,19 @@ void uartFxn(void* ptr)
 
             case CHANGE_TEMPERATURE_THRESHOLD:
             {
-                UART_read(uart, &temperature_threshold, sizeof(temperature_threshold));
+                //UART_read(uart, &temperature_threshold, sizeof(temperature_threshold));
                 break;
             }
 
             case CHANGE_HUMIDITY_THRESHOLD:
             {
-                UART_write(uart, &humidity_threshold, sizeof(temperature_threshold));
+                //UARTprintf(uart, &humidity_threshold, sizeof(temperature_threshold));
                 break;
             }
 
             case CHANGE_GAS_THRESHOLD:
             {
-                UART_write(uart, &gas_threshold, sizeof(temperature_threshold));
+                //UARTprintf(uart, &gas_threshold, sizeof(temperature_threshold));
                 break;
             }
 
@@ -483,16 +482,16 @@ void loggerFxn(void* ptr)
                 break;
             }
          }
-         if(Semaphore_getCount(sem_read))
+         if(uxSemaphoreGetCount(sem_read))
          {
              xSemaphoreGive(sem_log);
          }
          else
          {
-             UART_write(uart,msg,strlen(msg));
+             UARTprintf("The message is %s", msg);
              sprintf(msg+timeslice,"LOG_END\n\r");
          }
-         UART_write(uart,msg,strlen(msg));
+         UARTprintf("The message is %s", msg);
     }
     free(msg);
 }
@@ -660,11 +659,7 @@ int main(void)
                 configMINIMAL_STACK_SIZE, NULL, 1, &uartfxnhandle);
 
      /* Turn on user LED */
-
-    System_printf("Starting the example\nSystem provider is set to SysMin. "
-                  "Halt the target to view any SysMin contents in ROV.\n");
     /* SysMin will only print to the console when you call flush or exit */
-    System_flush();
     uart_init();
     /* Start BIOS */
     vTaskStartScheduler();
