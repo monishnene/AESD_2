@@ -225,7 +225,7 @@ void UART_send(char* ptr, int length)
 
                while(length != 0)
                {
-                   UARTCharPut(UART2_BASE, *ptr);
+                   UARTCharPut(UART0_BASE, *ptr);
                    ptr++;
                    length--;
                }
