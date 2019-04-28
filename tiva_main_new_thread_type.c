@@ -233,12 +233,15 @@ void UARTFxn(void* ptr)
     uint8_t command;
     uart_data_t received_data,send_data;
     queue_data_t data_log;
+    send_data.time_now=xTaskGetTickCount();
     while(condition)
     {
         command=UARTCharGet(UART0_BASE);
         data_log.log_id=LOG_COMMAND;
         data_log.data=command;
         queue_adder(&data_log);
+        send_data.command=command;
+        send_data.time_now=xTaskGetTickCount();
         switch(command)
         {
             case LOG_DATA:
@@ -249,23 +252,22 @@ void UARTFxn(void* ptr)
 
             case GET_TEMPERATURE:
             {
-                send_data.time_now=xTaskGetTickCount();
                 send_data.data=current_temperature;
-                UARTprintf("The temperature is %d\n\r",send_data.data);
+                UARTwrite(&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case GET_HUMIDITY:
             {
                 send_data.data=current_humidity;
-                UARTprintf("The humidity is %d\n\r",send_data.data);
+                UARTwrite(&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case GET_GAS:
             {
                 send_data.data=current_gas;
-                UARTprintf("The gas data is %d\n\r", send_data.data);
+                UARTwrite(&send_data,sizeof(uart_data_t));
                 break;
             }
 
@@ -274,20 +276,23 @@ void UARTFxn(void* ptr)
                 UARTprintf("The temperature threshold is %d", temperature_threshold);
                 UARTprintf("The humidity threshold is %d", humidity_threshold);
                 UARTprintf("The gas threshold is %d", gas_threshold);
+                UARTwrite(&temperature_threshold,sizeof(int32_t)*5);
+                UARTwrite(&humidity_threshold,sizeof(int32_t)*5);
+                UARTwrite(&gas_threshold,sizeof(int32_t)*5);
                 break;
             }
 
             case GET_FAN:
             {
                 send_data.data=fans_on;
-                UARTprintf("The fans on is %d", send_data.data);
+                UARTwrite(&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case GET_BUZZER:
             {
                 send_data.data=buzzer;
-                UARTprintf("The buzzer is %d", send_data.data);
+                UARTwrite(&send_data,sizeof(uart_data_t));
                 break;
             }
 
@@ -552,10 +557,7 @@ void sensorFxn(void* ptr)
 int main(void)
 {
     // Initialize system clock to 120 MHz
-    g_ui32SysClock = MAP_SysCtlClockFreqSet(
-                               (SYSCTL_XTAL_25MHZ | SYSCTL_OSC_MAIN |
-                                SYSCTL_USE_PLL | SYSCTL_CFG_VCO_480),
-                               12e7);
+    g_ui32SysClock = MAP_SysCtlClockFreqSet(( SYSCTL_XTAL_25MHZ | SYSCTL_OSC_MAIN | SYSCTL_USE_PLL | SYSCTL_CFG_VCO_480), 12e7);
     g_ui32Counter = 0;
     // Set up the UART which is connected to the virtual COM port
     UARTStdioConfig(0, 115200, 12e7);
@@ -572,23 +574,12 @@ int main(void)
     xSemaphoreGive(sem_uart);
     // Initialize the GPIO pins for the Launchpad
     PinoutSet(false, false);
-
     // Create demo tasks
-    xTaskCreate(sensorFxn, (const portCHAR *)"sensor",
-                TASKSTACKSIZE, NULL, 1, NULL);
-
-    xTaskCreate(thresholdFxn, (const portCHAR *)"threshold",
-                TASKSTACKSIZE, NULL, 1, NULL);
-
-    xTaskCreate(loggerFxn, (const portCHAR *)"logger",
-                TASKSTACKSIZE, NULL, 1, NULL);
-
-    xTaskCreate(gasFxn, (const portCHAR *)"gas",
-                TASKSTACKSIZE, NULL, 1, NULL);
-
-    xTaskCreate(UARTFxn, (const portCHAR *)"uart",
-                TASKSTACKSIZE, NULL, 1, NULL);
-
+    xTaskCreate(sensorFxn, (const portCHAR *)"sensor", TASKSTACKSIZE, NULL, 1, NULL);
+    xTaskCreate(thresholdFxn, (const portCHAR *)"threshold", TASKSTACKSIZE, NULL, 1, NULL);
+    xTaskCreate(loggerFxn, (const portCHAR *)"logger", TASKSTACKSIZE, NULL, 1, NULL);
+    xTaskCreate(gasFxn, (const portCHAR *)"gas", TASKSTACKSIZE, NULL, 1, NULL);
+    xTaskCreate(UARTFxn, (const portCHAR *)"uart", TASKSTACKSIZE, NULL, 1, NULL);
     vTaskStartScheduler();
     return 0;
 }
