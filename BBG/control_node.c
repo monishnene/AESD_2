@@ -435,6 +435,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 		}				
 		scanf("%c",&input);
 		send_data.command_id = input;
+		res = write(fd_uart0,send_data,strlen(send_data));
 		switch(input)
 		{
 			case LOG_DATA:
@@ -445,7 +446,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_TEMPERATURE:
 			{
-																		        				read(fd_uart0,received_data,sizeof(received_data)); 				
+																		        				res = read(fd_uart0,received_data,sizeof(received_data)); 				
 				//send_data.data=current_temperature;
 				//uart_write(
 				//UART_write(uart, &send_data, sizeof(uart_data_t));
@@ -454,7 +455,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_HUMIDITY:
 			{
-				read(fd_uart0,received_data,sizeof(received_data));
+				res= read(fd_uart0,received_data,sizeof(received_data));
 				//send_data.data=current_humidity;
 				//UART_write(uart, &send_data, sizeof(uart_data_t));
 				break;
@@ -462,7 +463,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_GAS:
 			{
-				read(fd_uart0,received_data,sizeof(received_data));
+				res=read(fd_uart0,received_data,sizeof(received_data));
 
 				//send_data.data=current_gas;
 				//UART_write(uart, &send_data, sizeof(uart_data_t));
@@ -471,7 +472,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_THRESHOLD:
 			{
-				read(fd_uart0,received_data,sizeof(received_data));
+				res=read(fd_uart0,received_data,sizeof(received_data));
 				//UART_write(uart, &temperature_threshold, sizeof(temperature_threshold));
 				//UART_write(uart, &humidity_threshold, sizeof(humidity_threshold));
 				//UART_write(uart, &gas_threshold, sizeof(gas_threshold));
@@ -480,7 +481,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_FAN:
 			{
-				read(fd_uart0,received_data,sizeof(received_data));
+				res=read(fd_uart0,received_data,sizeof(received_data));
 				//send_data.data=fans_on;
 				//UART_write(uart, &send_data, sizeof(uart_data_t));
 				break;
@@ -488,7 +489,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_BUZZER:
 			{
-				read(fd_uart0,received_data,sizeof(received_data));
+				res=read(fd_uart0,received_data,sizeof(received_data));
 				//send_data.data=buzzer;
 				//UART_write(uart, &send_data, sizeof(uart_data_t));
 				break;
