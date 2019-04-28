@@ -48,6 +48,7 @@
 #include <ti/sysbios/knl/Task.h>
 #include <xdc/runtime/Error.h>
 
+
 /* TI-RTOS Header files */
 #include <ti/drivers/GPIO.h>
 #include <ti/drivers/UART.h>
@@ -73,10 +74,18 @@
 #include "driverlib/gpio.h"
 #include "driverlib/adc.h"
 #include "driverlib/pin_map.h"
-#include <ti/sysbios/knl/semaphore.h>
+#include "driverlib/debug.h"
+#include "drivers/pinout.h"
+#include "utils/uartstdio.h"
+#include "driverlib/rom.h"
+#include "driverlib/rom_map.h"
 #include <ti/sysbios/knl/Clock.h>
+#include <ti/sysbios/knl/semaphore.h>
 #include "FreeRTOS.h"
+#include "FreeRTOSConfig.h"
+#include "task.h"
 #include "queue.h"
+#include "main.h"
 
 
 /*****************************
@@ -258,7 +267,7 @@ void Fan_update(int8_t value)
     queue_adder(&data_send);
 }
 
-void uartFxn(UArg arg0, UArg arg1)
+void uartFxn(void* ptr)
 {
     uint8_t command;
     uart_data_t received_data,send_data;
@@ -385,14 +394,13 @@ void uartFxn(UArg arg0, UArg arg1)
     }
 }
 
-void loggerFxn(UArg arg0, UArg arg1)
+void loggerFxn(void* ptr)
 {
     uint8_t* time_str = (uint8_t*)malloc(30);
     uint8_t timeslice;
     queue_data_t received_data;
     while (condition)
     {
-         Task_sleep((unsigned int)arg0);
          //message queue receive
          Semaphore_pend(sem_log, BIOS_WAIT_FOREVER);
          Semaphore_pend(sem_read, BIOS_WAIT_FOREVER);
@@ -499,28 +507,12 @@ void InitI2C0(void)
     HWREG(I2C0_BASE + I2C_O_FIFOCTL) = 80008000;
 }
 
-void ledtoggleFxn(UArg arg0, UArg arg1)
-{
-    static int32_t count=0;
-    queue_data_t data_send;
-    uint32_t time_now =  Clock_getTicks();
-    while (condition)
-    {
-        Task_sleep((unsigned int)arg0);
-        GPIO_toggle(Board_LED1);
-        GPIO_toggle(Board_LED0);
-        data_send.data=++count;
-        data_send.log_id=LOG_LED;
-        queue_adder(&data_send);
-    }
-}
-
-void gasFxn(UArg arg0, UArg arg1)
+void gasFxn(void* ptr)
 {
     queue_data_t data_send;
     while (condition)
     {
-       Task_sleep((unsigned int)arg0);
+       vTaskDelay(GAS_PERIOD);
        SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC1);
        while(!SysCtlPeripheralReady(SYSCTL_PERIPH_ADC1));
        GPIOPinTypeADC(GPIO_PORTE_BASE,GPIO_PIN_2);
@@ -540,13 +532,13 @@ void gasFxn(UArg arg0, UArg arg1)
     }
 }
 
-void thresholdFxn(UArg arg0, UArg arg1)
+void thresholdFxn(void* ptr)
 {
     uint8_t i=0;
     queue_data_t data_send;
     while (condition)
     {
-        Task_sleep((unsigned int)arg0);
+        vTaskDelay(THRESHOLD_PERIOD);
         //
         for(i=0;i<5;i++)
         {
@@ -566,13 +558,13 @@ void thresholdFxn(UArg arg0, UArg arg1)
     }
 }
 
-void sensorFxn(UArg arg0, UArg arg1)
+void sensorFxn(void* ptr)
 {
     uint16_t data_op[2];
     queue_data_t data_send;
     while (condition)
     {
-       Task_sleep((unsigned int)arg0);
+       vTaskDelay(SENSOR_PERIOD);
        I2CMasterSlaveAddrSet(I2C0_BASE, SI7021_SLAVE_ADDRESS, false);
        I2CMasterDataPut(I2C0_BASE,TEMP_ADDRESS);
        I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_SEND);
@@ -612,6 +604,12 @@ void sensorFxn(UArg arg0, UArg arg1)
  */
 int main(void)
 {
+    uint32_t output_clock_rate_hz;
+    output_clock_rate_hz = ROM_SysCtlClockFreqSet(
+                               (SYSCTL_XTAL_25MHZ | SYSCTL_OSC_MAIN |
+                                SYSCTL_USE_PLL | SYSCTL_CFG_VCO_480),
+                               SYSTEM_CLOCK);
+    ASSERT(output_clock_rate_hz == SYSTEM_CLOCK);
     Task_Params uart_task,logger_task,sensor_task,gas_task,threshold_task;
     /* Call board init functions */
     Board_initGeneral();
@@ -631,40 +629,20 @@ int main(void)
     Semaphore_construct(&sem_read_struct, 0, &sem_read_params);
     sem_read = Semaphore_handle(&sem_read_struct);
 
-    /* Construct logger Task  thread */
-    Task_Params_init(&logger_task);
-    logger_task.arg0 = LOGGER_PERIOD;
-    logger_task.stackSize = TASKSTACKSIZE;
-    logger_task.stack = &logger_stack;
-    Task_construct(&logger_struct, (Task_FuncPtr)loggerFxn, &logger_task, NULL);
+    xTaskCreate(sensorFxn, (const portCHAR *)"Sensorstart",
+                    configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
-    /* Construct uart Task  thread */
-    Task_Params_init(&uart_task);
-    uart_task.arg0 = UART_PERIOD;
-    uart_task.stackSize = TASKSTACKSIZE;
-    uart_task.stack = &uart_stack;
-    Task_construct(&uart_struct, (Task_FuncPtr)uartFxn, &uart_task, NULL);
+    xTaskCreate(thresholdFxn, (const portCHAR *)"thresholdstart",
+                configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
-    /* Construct threshold  thread */
-    Task_Params_init(&threshold_task);
-    threshold_task.arg0 = THRESHOLD_PERIOD;
-    threshold_task.stackSize = TASKSTACKSIZE;
-    threshold_task.stack = &threshold_stack;
-    Task_construct(&threshold_struct, (Task_FuncPtr)thresholdFxn, &threshold_task, NULL);
+    xTaskCreate(loggerFxn, (const portCHAR *)"loggerstart",
+                configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
-    /* Construct gas Task  thread */
-    Task_Params_init(&gas_task);
-    gas_task.arg0 = GAS_PERIOD;
-    gas_task.stackSize = TASKSTACKSIZE;
-    gas_task.stack = &gas_stack;
-    Task_construct(&gas_struct, (Task_FuncPtr)gasFxn, &gas_task, NULL);
+    xTaskCreate(gasFxn, (const portCHAR *)"gassensor",
+                configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
-    /* Construct sensor  thread */
-    Task_Params_init(&sensor_task);
-    sensor_task.arg0 = SENSOR_PERIOD;
-    sensor_task.stackSize = TASKSTACKSIZE;
-    sensor_task.stack = &sensor_stack;
-    Task_construct(&sensor_struct, (Task_FuncPtr)sensorFxn, &sensor_task, NULL);
+    xTaskCreate(uartFxn, (const portCHAR *)"uartcomm",
+                configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
      /* Turn on user LED */
 
@@ -674,6 +652,6 @@ int main(void)
     System_flush();
     uart_init();
     /* Start BIOS */
-    BIOS_start();
+    vTaskStartScheduler();
     return (0);
 }
