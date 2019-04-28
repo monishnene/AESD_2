@@ -241,7 +241,7 @@ void UARTFxn(void* ptr)
         data_log.log_id=LOG_COMMAND;
         data_log.data=command;
         queue_adder(&data_log);
-        send_data.command=command;
+        send_data.command_id=command;
         send_data.time_now=xTaskGetTickCount();
         switch(command)
         {
