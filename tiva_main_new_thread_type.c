@@ -6,8 +6,8 @@
  *
  * This is a simple demonstration project of FreeRTOS 8.2 on the Tiva Launchpad
  * EK-TM4C1294XL.  TivaWare driverlib sourcecode is included.
-#include <errno.h>
  */
+
 #include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -62,11 +62,11 @@
 #define HUMIDITY_ADDRESS (0xE5)
 
 QueueHandle_t log_queue;
-SemaphoreHandle_t sem_log,sem_read;
+SemaphoreHandle_t sem_log,sem_read,sem_uart,sem_uart_comm;
 static volatile uint32_t log_counter=0;
 uint8_t log_type;
 uint8_t* logfile;
-uint8_t* msg;
+uint8_t msg[STR_SIZE];
 uint8_t fans_on=0;
 bool buzzer=0;
 bool remote_mode = AUTOMATIC_MODE;
@@ -146,7 +146,7 @@ void queue_adder(queue_data_t* data_send)
     if(log_counter < QUEUE_SIZE-1)
     {
         LEDWrite(0x0F, 0x00);
-        //xQueueSend(log_queue,( void * )data_send,(TickType_t)10);
+        xQueueSend(log_queue,( void * )data_send,(TickType_t)10);
         log_counter++;
     }
     else if(log_counter == QUEUE_SIZE-1)
@@ -154,8 +154,12 @@ void queue_adder(queue_data_t* data_send)
         data_send->data=0;
         data_send->log_id=LOG_ERROR;
         LEDWrite(0x0F, 0x00);
-        //xQueueSend(log_queue,( void * )data_send,(TickType_t)10);
+        xQueueSend(log_queue,( void * )data_send,(TickType_t)10);
         log_counter++;
+    }
+    else
+    {
+        LEDWrite(0x0F, 0x01);
     }
 }
 
@@ -208,141 +212,146 @@ void i2c_init()
     I2CMasterInitExpClk(I2C0_BASE, g_ui32SysClock, false);
  }
 
-void UARTIntHandler(void)
+void UARTIntHandler(void* ptr)
 {
-    uint32_t ui32Status;
+
+}
+
+void uart_init(void)
+{
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+    GPIOPinConfigure(GPIO_PA0_U0RX);
+    GPIOPinConfigure(GPIO_PA1_U0TX);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
+    UARTClockSourceSet(UART0_BASE, UART_CLOCK_PIOSC);
+    GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+    UARTStdioConfig(0, 115200, 16000000);
+}
+
+void UARTFxn(void* ptr)
+{
     uint8_t command;
     uart_data_t received_data,send_data;
     queue_data_t data_log;
-    ui32Status = UARTIntStatus(UART0_BASE, true);
-    UARTIntClear(UART0_BASE, ui32Status);
-    while(UARTCharsAvail(UART0_BASE))
+    while(condition)
     {
-        //
-        // Read the next character from the UART and write it back to the UART.
-        //
-        UARTCharPutNonBlocking(UART0_BASE,
-                               UARTCharGetNonBlocking(UART0_BASE));
+        command=UARTCharGet(UART0_BASE);
+        data_log.log_id=LOG_COMMAND;
+        data_log.data=command;
+        queue_adder(&data_log);
+        switch(command)
+        {
+            case LOG_DATA:
+            {
+                xSemaphoreGive(sem_log);
+                break;
+            }
+
+            case GET_TEMPERATURE:
+            {
+                send_data.time_now=xTaskGetTickCount();
+                send_data.data=current_temperature;
+                UARTprintf("The temperature is %d\n\r",send_data.data);
+                break;
+            }
+
+            case GET_HUMIDITY:
+            {
+                send_data.data=current_humidity;
+                UARTprintf("The humidity is %d\n\r",send_data.data);
+                break;
+            }
+
+            case GET_GAS:
+            {
+                send_data.data=current_gas;
+                UARTprintf("The gas data is %d\n\r", send_data.data);
+                break;
+            }
+
+            case GET_THRESHOLD:
+            {
+                UARTprintf("The temperature threshold is %d", temperature_threshold);
+                UARTprintf("The humidity threshold is %d", humidity_threshold);
+                UARTprintf("The gas threshold is %d", gas_threshold);
+                break;
+            }
+
+            case GET_FAN:
+            {
+                send_data.data=fans_on;
+                UARTprintf("The fans on is %d", send_data.data);
+                break;
+            }
+
+            case GET_BUZZER:
+            {
+                send_data.data=buzzer;
+                UARTprintf("The buzzer is %d", send_data.data);
+                break;
+            }
+
+            case CHANGE_MODE:
+            {
+                if(received_data.data<2)
+                {
+                    remote_mode=received_data.data;
+                }
+                break;
+            }
+
+            case CHANGE_TEMPERATURE_THRESHOLD:
+            {
+                //UART_read(uart, &temperature_threshold, sizeof(temperature_threshold));
+                break;
+            }
+
+            case CHANGE_HUMIDITY_THRESHOLD:
+            {
+                //UARTprintf(uart, &humidity_threshold, sizeof(temperature_threshold));
+                break;
+            }
+
+            case CHANGE_GAS_THRESHOLD:
+            {
+                //UARTprintf(uart, &gas_threshold, sizeof(temperature_threshold));
+                break;
+            }
+
+            case BUZZER_ON:
+            {
+                remote_mode=MANUAL_MODE;
+                buzzer=1;
+                //buzzer_control();
+                break;
+            }
+
+            case BUZZER_OFF:
+            {
+                remote_mode=MANUAL_MODE;
+                buzzer=0;
+                //buzzer_control();
+                break;
+            }
+
+            case FORCE_CHANGE_FANS:
+            {
+                if(received_data.data<6)
+                {
+                    remote_mode=MANUAL_MODE;
+                    fans_on=received_data.data;
+                    Fan_update(fans_on);
+                }
+                break;
+            }
+
+            default:
+            {
+                break;
+            }
+        }
     }
-//    command=UARTCharGetNonBlocking(UART0_BASE);
-//    //command=UARTCharGet(0);
-//    UARTprintf("UART interrupt received\n\r");
-//    UARTprintf("command received = %c\n\r",command);
-//    send_data.command_id=received_data.command_id;
-//    send_data.time_now=xTaskGetTickCount();
-//    data_log.log_id=LOG_COMMAND;
-//    data_log.data=received_data.command_id;
-//    queue_adder(&data_log);
-//    switch(command)
-//    {
-//        case LOG_DATA:
-//        {
-//            xSemaphoreGive(sem_log);
-//            break;
-//        }
-//
-//        case GET_TEMPERATURE:
-//        {
-//            send_data.data=current_temperature;
-//            UARTprintf("The temperature is %d",send_data.data);
-//            break;
-//        }
-//
-//        case GET_HUMIDITY:
-//        {
-//            send_data.data=current_humidity;
-//            UARTprintf("The humidity is %d",send_data.data);
-//            break;
-//        }
-//
-//        case GET_GAS:
-//        {
-//            send_data.data=current_gas;
-//            UARTprintf("The gas data is %d", send_data.data);
-//            break;
-//        }
-//
-//        case GET_THRESHOLD:
-//        {
-//            UARTprintf("The temperature threshold is %d", temperature_threshold);
-//            UARTprintf("The humidity threshold is %d", humidity_threshold);
-//            UARTprintf("The gas threshold is %d", gas_threshold);
-//            break;
-//        }
-//
-//        case GET_FAN:
-//        {
-//            send_data.data=fans_on;
-//            UARTprintf("The fans on is %d", send_data.data);
-//            break;
-//        }
-//
-//        case GET_BUZZER:
-//        {
-//            send_data.data=buzzer;
-//            UARTprintf("The buzzer is %d", send_data.data);
-//            break;
-//        }
-//
-//        case CHANGE_MODE:
-//        {
-//            if(received_data.data<2)
-//            {
-//                remote_mode=received_data.data;
-//            }
-//            break;
-//        }
-//
-//        case CHANGE_TEMPERATURE_THRESHOLD:
-//        {
-//            //UART_read(uart, &temperature_threshold, sizeof(temperature_threshold));
-//            break;
-//        }
-//
-//        case CHANGE_HUMIDITY_THRESHOLD:
-//        {
-//            //UARTprintf(uart, &humidity_threshold, sizeof(temperature_threshold));
-//            break;
-//        }
-//
-//        case CHANGE_GAS_THRESHOLD:
-//        {
-//            //UARTprintf(uart, &gas_threshold, sizeof(temperature_threshold));
-//            break;
-//        }
-//
-//        case BUZZER_ON:
-//        {
-//            remote_mode=MANUAL_MODE;
-//            buzzer=1;
-//            //buzzer_control();
-//            break;
-//        }
-//
-//        case BUZZER_OFF:
-//        {
-//            remote_mode=MANUAL_MODE;
-//            buzzer=0;
-//            //buzzer_control();
-//            break;
-//        }
-//
-//        case FORCE_CHANGE_FANS:
-//        {
-//            if(received_data.data<6)
-//            {
-//                remote_mode=MANUAL_MODE;
-//                fans_on=received_data.data;
-//                Fan_update(fans_on);
-//            }
-//            break;
-//        }
-//
-//        default:
-//        {
-//            break;
-//        }
-//    }
+    vTaskDelete(NULL);
 }
 
 void loggerFxn(void* ptr)
@@ -352,24 +361,23 @@ void loggerFxn(void* ptr)
     queue_data_t received_data;
     while (condition)
     {
-        UARTprintf("Entering logger task\n");
          //message queue receive
+
          xSemaphoreTake(sem_log, portMAX_DELAY);
          xSemaphoreTake(sem_read, portMAX_DELAY);
          while(log_counter<1);
          if(log_counter>0)
          {
-
-             printf("hello this is sanika\n");
-             /*if(xQueueReceive(log_queue, &(received_data), portMAX_DELAY)==0)
+             if(xQueueReceive(log_queue, &(received_data), portMAX_DELAY)==0)
              {
                  continue;
-             }*/
+             }
          }
          log_counter--;
          sprintf(time_str,"time: %d sec %d msec\t",received_data.time_now/1000,received_data.time_now%1000);
-         strcpy(msg,time_str);
          timeslice=strlen(time_str);
+         bzero(msg,STR_SIZE);
+         memcpy(msg,time_str,timeslice);
          switch(received_data.log_id)
          {
             case LOG_LED:
@@ -386,7 +394,7 @@ void loggerFxn(void* ptr)
 
             case LOG_COMMAND:
             {
-                sprintf(msg+timeslice,"LOG_COMMAND\tCommand received: %c\n\r",received_data.data);
+                sprintf(msg+timeslice,"LOG_COMMAND \tCommand received: %c\n\r",received_data.data);
                 break;
             }
 
@@ -433,12 +441,16 @@ void loggerFxn(void* ptr)
          }
          else
          {
-             UARTprintf("The message is %s", msg);
+             xSemaphoreTake(sem_uart,portMAX_DELAY);
+             UARTprintf(msg);
+             xSemaphoreGive(sem_uart);
+             bzero(msg+timeslice,STR_SIZE-timeslice);
              sprintf(msg+timeslice,"LOG_END\n\r");
          }
-         UARTprintf("The message is %s", msg);
+         xSemaphoreTake(sem_uart,portMAX_DELAY);
+         UARTprintf(msg);
+         xSemaphoreGive(sem_uart);
     }
-    free(msg);
     vTaskDelete(NULL);
 }
 
@@ -448,7 +460,6 @@ void gasFxn(void* ptr)
     while (condition)
     {
        vTaskDelay(GAS_PERIOD);
-       UARTprintf("Gas Task Done\n\r");
        SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC1);
        while(!SysCtlPeripheralReady(SYSCTL_PERIPH_ADC1));
        GPIOPinTypeADC(GPIO_PORTE_BASE,GPIO_PIN_2);
@@ -476,7 +487,6 @@ void thresholdFxn(void* ptr)
     while (condition)
     {
         vTaskDelay(THRESHOLD_PERIOD);
-        UARTprintf("Entering Threshold task\n");
         for(i=0;i<5;i++)
         {
             if((current_temperature<temperature_threshold[i])&&(current_humidity<humidity_threshold[i])&&(current_gas<gas_threshold[i]))
@@ -503,7 +513,6 @@ void sensorFxn(void* ptr)
     while (condition)
     {
        vTaskDelay(SENSOR_PERIOD);
-       UARTprintf("Sensor Task Done\n\r");
        I2CMasterSlaveAddrSet(I2C0_BASE, SI7021_SLAVE_ADDRESS, false);
        I2CMasterDataPut(I2C0_BASE,TEMP_ADDRESS);
        I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_SEND);
@@ -555,7 +564,12 @@ int main(void)
     SysTickPeriodSet(12e4);
     SysTickIntEnable();
     SysTickEnable();
-
+    log_queue=xQueueCreate(QUEUE_SIZE,sizeof(queue_data_t));
+    sem_read = xSemaphoreCreateBinary();
+    sem_log = xSemaphoreCreateBinary();
+    sem_uart = xSemaphoreCreateBinary();
+    sem_uart_comm = xSemaphoreCreateBinary();
+    xSemaphoreGive(sem_uart);
     // Initialize the GPIO pins for the Launchpad
     PinoutSet(false, false);
 
@@ -566,10 +580,13 @@ int main(void)
     xTaskCreate(thresholdFxn, (const portCHAR *)"threshold",
                 TASKSTACKSIZE, NULL, 1, NULL);
 
-//    xTaskCreate(loggerFxn, (const portCHAR *)"logger",
-//                TASKSTACKSIZE, NULL, 1, NULL);
+    xTaskCreate(loggerFxn, (const portCHAR *)"logger",
+                TASKSTACKSIZE, NULL, 1, NULL);
 
     xTaskCreate(gasFxn, (const portCHAR *)"gas",
+                TASKSTACKSIZE, NULL, 1, NULL);
+
+    xTaskCreate(UARTFxn, (const portCHAR *)"uart",
                 TASKSTACKSIZE, NULL, 1, NULL);
 
     vTaskStartScheduler();
