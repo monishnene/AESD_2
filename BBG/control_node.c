@@ -77,6 +77,50 @@ char buffer_out[]="\nHello World!\nUart is working ;-)\n";
 
 volatile int STOP=FALSE; 
 
+#define STR_SIZE 200
+#define LOGGER_PERIOD 20
+#define THRESHOLD_PERIOD 1000
+#define LED_PERIOD  1000
+#define SENSOR_PERIOD 1000
+#define GAS_PERIOD 1000
+#define HUMIDITY_PERIOD 1000
+#define TEMP_SLAVE_ADDR (0x48)
+#define TEMP_REG_ADDR   (0x00)
+#define UART_PERIOD 1
+#define QUEUE_SIZE 100
+#define AUTOMATIC_MODE 1
+#define MANUAL_MODE 0
+#define SI7021_SLAVE_ADDRESS (0x40)
+#define TEMP_ADDRESS (0xE3)
+#define HUMIDITY_ADDRESS (0xE5)
+
+QueueHandle_t log_queue;
+SemaphoreHandle_t sem_log,sem_read;
+static volatile uint32_t log_counter=0;
+uint8_t log_type;
+uint8_t* logfile;
+uint8_t* msg;
+uint8_t fans_on=0;
+bool buzzer=0;
+bool remote_mode = AUTOMATIC_MODE;
+int32_t current_temperature,current_gas,condition;
+double current_humidity;
+bool fans[5]={0,0,0,0,0};
+int32_t temperature_threshold[5]={20,25,30,35,50};
+int32_t humidity_threshold[5]={20,40,60,80,90};
+int32_t gas_threshold[5]={20,40,60,80,90};
+volatile uint32_t g_ui32Counter = 0;
+uint8_t* error_msg[]={"The Log Queue is full, Data Lost","Log type not found"};
+uint32_t g_ui32SysClock;
+uint32_t sys_clock;
+char uart_val;
+
+typedef enum
+{
+    QUEUE_FULL=0,
+    ERROR_LOGTYPE=1,
+}error_t;
+
 typedef enum
 {
     LOG_LED=0,
@@ -88,6 +132,13 @@ typedef enum
     LOG_FAN=6,
     LOG_ERROR=7,
 }logtype_t;
+
+typedef struct
+{
+    logtype_t log_id;
+    int32_t data;
+    int32_t time_now;
+}queue_data_t;
 
 typedef enum
 {
@@ -105,7 +156,6 @@ typedef enum
     BUZZER_OFF='L',
     FORCE_CHANGE_FANS='M',
     GET_BUZZER='N',
-    RETRY_BIST='O',
 }uart_command_t;
 
 typedef struct
@@ -115,6 +165,7 @@ typedef struct
     int32_t time_now;
 }uart_data_t;
 
+uart_data_t send_data, received_data;
 /*****************************
 * logger function to log data
 ******************************/
@@ -383,6 +434,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 			printf("\nEnter new command:\n");
 		}				
 		scanf("%c",&input);
+		send_data.command_id = input;
 		switch(input)
 		{
 			case LOG_DATA:
@@ -393,13 +445,16 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_TEMPERATURE:
 			{
+																		        				read(fd_uart0,received_data,sizeof(received_data)); 				
 				//send_data.data=current_temperature;
+				//uart_write(
 				//UART_write(uart, &send_data, sizeof(uart_data_t));
 				break;	
 			}
 
 			case GET_HUMIDITY:
 			{
+				read(fd_uart0,received_data,sizeof(received_data));
 				//send_data.data=current_humidity;
 				//UART_write(uart, &send_data, sizeof(uart_data_t));
 				break;
@@ -407,6 +462,8 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_GAS:
 			{
+				read(fd_uart0,received_data,sizeof(received_data));
+
 				//send_data.data=current_gas;
 				//UART_write(uart, &send_data, sizeof(uart_data_t));
 				break;
@@ -414,6 +471,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_THRESHOLD:
 			{
+				read(fd_uart0,received_data,sizeof(received_data));
 				//UART_write(uart, &temperature_threshold, sizeof(temperature_threshold));
 				//UART_write(uart, &humidity_threshold, sizeof(humidity_threshold));
 				//UART_write(uart, &gas_threshold, sizeof(gas_threshold));
@@ -422,6 +480,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_FAN:
 			{
+				read(fd_uart0,received_data,sizeof(received_data));
 				//send_data.data=fans_on;
 				//UART_write(uart, &send_data, sizeof(uart_data_t));
 				break;
@@ -429,6 +488,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case GET_BUZZER:
 			{
+				read(fd_uart0,received_data,sizeof(received_data));
 				//send_data.data=buzzer;
 				//UART_write(uart, &send_data, sizeof(uart_data_t));
 				break;
@@ -436,54 +496,69 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 			case CHANGE_MODE:
 			{
-				//if(received_data.data<2)
+				if(received_data.data<2)
 				{
-				//    remote_mode=received_data.data;
+				    remote_mode=received_data.data;
 				}
 				break;
 			}
 
 			case CHANGE_TEMPERATURE_THRESHOLD:
 			{
+				scanf("%d", &temperature_threshold[0]);
+				scanf("%d", &temperature_threshold[1]);
+				scanf("%d", &temperature_threshold[2]);
+				scanf("%d", &temperature_threshold[3]);
+				scanf("%d", &temperature_threshold[4]);
 				//UART_read(uart, &temperature_threshold, sizeof(temperature_threshold));
 				break;
 			}
 
 			case CHANGE_HUMIDITY_THRESHOLD:
 			{
+				scanf("%d", &humidity_threshold[0]);
+				scanf("%d", &humidity_threshold[1]);
+				scanf("%d", &humidity_threshold[2]);
+				scanf("%d", &humidity_threshold[3]);
+				scanf("%d", &humidity_threshold[4]);
 				//UART_write(uart, &humidity_threshold, sizeof(temperature_threshold));
 				break;
 			}
 
 			case CHANGE_GAS_THRESHOLD:
 			{
+				scanf("%d", &gas_threshold[0]);
+				scanf("%d", &gas_threshold[1]);
+				scanf("%d", &gas_threshold[2]);
+				scanf("%d", &gas_threshold[3]);
+				scanf("%d", &gas_threshold[4]);
 				//UART_write(uart, &gas_threshold, sizeof(temperature_threshold));
 				break;
 			}
 
 			case BUZZER_ON:
 			{
-				//remote_mode=MANUAL_MODE;
-				//buzzer=1;
-				//buzzer_control();
+				remote_mode=MANUAL_MODE;
+				buzzer=1;
+				buzzer_control();
 				break;
 			}
 
 			case BUZZER_OFF:
 			{
-				//remote_mode=MANUAL_MODE;
-				//buzzer=0;
-				//buzzer_control();
+				remote_mode=MANUAL_MODE;
+				buzzer=0;
+				buzzer_control();
 				break;
 			}
 
 			case FORCE_CHANGE_FANS:
 			{
-				//if(received_data.data<6)
+				if(received_data.data<6)
 				{
-					//remote_mode=MANUAL_MODE;
-					//fans_on=received_data.data;
-					//Fan_update(fans_on);
+					remote_mode=MANUAL_MODE;
+					fans_on=received_data.data;
+					Fan_update(fans_on);
 				}
 				break;
 			}
