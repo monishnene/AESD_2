@@ -1,98 +1,121 @@
-/*
- * Copyright (c) 2015, Texas Instruments Incorporated
- * All rights reserved.
+/* FreeRTOS 8.2 Tiva Demo
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ * main.c
  *
- * *  Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
+ * Andy Kobyljanec
  *
- * *  Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * *  Neither the name of Texas Instruments Incorporated nor the names of
- *    its contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * This is a simple demonstration project of FreeRTOS 8.2 on the Tiva Launchpad
+ * EK-TM4C1294XL.  TivaWare driverlib sourcecode is included.
  */
 
-//I have refferred the TI resource explorer functions and https://www.digikey.com/eewiki/display/microcontroller/I2C+Communication+with+the+TI+Tiva+TM4C123GXL for I2C communication
-
-/*
- *  ======== empty.c ========
- */
-/* Board Header file */
-#include "Board.h"
-
-
-/* XDCtools Header files */
-#include <xdc/std.h>
-#include <xdc/runtime/System.h>
-
-/* BIOS Header files */
-#include <ti/sysbios/BIOS.h>
-#include <ti/sysbios/knl/Task.h>
-#include <xdc/runtime/Error.h>
-
-
-/* TI-RTOS Header files */
-#include <ti/drivers/GPIO.h>
-#include <ti/drivers/UART.h>
-#include <errno.h>
-#include <pthread.h>
-#include <signal.h>
-#include <stdio.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <math.h>
-#include <string.h>
-#include <types.h>
-#include <time.h>
-#include <unistd.h>
-#include <stdarg.h>
 #include <stdbool.h>
-#include "inc/hw_i2c.h"
-#include "inc/hw_memmap.h"
-#include "inc/hw_types.h"
-#include "inc/hw_gpio.h"
-#include "driverlib/i2c.h"
-#include "driverlib/sysctl.h"
-#include "driverlib/gpio.h"
-#include "driverlib/adc.h"
-#include "driverlib/pin_map.h"
-#include "driverlib/debug.h"
+#include "main.h"
 #include "drivers/pinout.h"
 #include "utils/uartstdio.h"
+
+
+// TivaWare includes
+#include "driverlib/sysctl.h"
+#include "driverlib/debug.h"
 #include "driverlib/rom.h"
 #include "driverlib/rom_map.h"
-#include <ti/sysbios/knl/Clock.h>
-#include <ti/sysbios/knl/semaphore.h>
+
+// FreeRTOS includes
+#include "FreeRTOSConfig.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include "inc/hw_memmap.h"
+#include "inc/hw_types.h"
+#include "inc/hw_ints.h"
+#include "driverlib/uart.h"
+#include "driverlib/gpio.h"
+#include "driverlib/pin_map.h"
+#include "driverlib/rom.h"
+#include "driverlib/rom_map.h"
+#include "driverlib/sysctl.h"
+#include "driverlib/interrupt.h"
+#include "driverlib/timer.h"
+#include "driverlib/i2c.h"
+#include "utils/uartstdio.h"
+#include "FreeRTOS.h"
+#include "drivers/pinout.h"
+#include "utils/uartstdio.h"
+#include <errno.h>
+#include <string.h>
+#include <stdio.h>
+#include "math.h"
+#include "inc/hw_memmap.h"
+#include "driverlib/rom_map.h"
+#include "driverlib/sysctl.h"
+#include "utils/uartstdio.h"
+#include "driverlib/pin_map.h"
+#include "drivers/pinout.h"
+#include "driverlib/gpio.h"
+#include "utils/uartstdio.h"
+#include "inc/hw_memmap.h"
+#include "driverlib/rom_map.h"
+#include "driverlib/sysctl.h"
+#include "utils/uartstdio.h"
+#include "driverlib/pin_map.h"
+#include <stdlib.h>
+// TivaWare includes
+#include "driverlib/sysctl.h"
+#include "driverlib/debug.h"
+#include "driverlib/rom.h"
+#include "driverlib/rom_map.h"
+#include "driverlib/i2c.h"
+
+#include <stdbool.h>
+#include "inc/hw_types.h"
+#include "driverlib/rom.h"
+#include "driverlib/uart.h"
+#include "utils/uartstdio.h"
+#include "driverlib/adc.h"
+#include "driverlib/rom.h"
+#include <stdlib.h>
+#include "inc/hw_memmap.h"
+#include "driverlib/rom_map.h"
+#include "driverlib/sysctl.h"
+#include "utils/uartstdio.h"
+#include "driverlib/pin_map.h"
+// TivaWare includes
+#include "inc/hw_types.h"
+#include "driverlib/rom.h"
+#include "driverlib/uart.h"
+#include "utils/uartstdio.h"
+#include "driverlib/adc.h"
+#include "driverlib/rom.h"
+#include "driverlib/sysctl.h"
+#include "driverlib/debug.h"
+#include "driverlib/rom.h"
+#include "driverlib/rom_map.h"
+#include "driverlib/i2c.h"
+#include "driverlib/sysctl.h"
+#include "driverlib/debug.h"
+#include "driverlib/rom.h"
+#include "driverlib/rom_map.h"
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
 #include "task.h"
 #include "queue.h"
-#include "main.h"
+#include "timers.h"
+#include "semphr.h"
+#include "inc/hw_memmap.h"
+#include "driverlib/gpio.h"
+#include "driverlib/pin_map.h"
+#include "driverlib/ssi.h"
+#include "driverlib/sysctl.h"
+#include "queue.h"
+#include "driverlib/systick.h"
+#include "semphr.h"
+#include "drivers/pinout.h"
 
-
-/*****************************
-* Global variables
-* shared mem
-*****************************
-*****************************/
+#define MQ_SIZE         (10)            // Size of the message queue
 #define TASKSTACKSIZE   1024
 #define STR_SIZE 200
 #define LOGGER_PERIOD 20
@@ -111,37 +134,24 @@
 #define TEMP_ADDRESS (0xE3)
 #define HUMIDITY_ADDRESS (0xE5)
 
-//semaphore
-Semaphore_Struct sem_log_struct,sem_read_struct;
-Semaphore_Handle sem_log,sem_read;
-Semaphore_Params sem_log_params,sem_read_params;
+QueueHandle_t log_queue;
+SemaphoreHandle_t sem_log,sem_read;
+static volatile uint32_t log_counter=0;
 uint8_t log_type;
-Task_Struct uart_struct;
-Task_Struct gas_struct;
-Task_Struct sensor_struct;
-Task_Struct logger_struct;
-Task_Struct threshold_struct;
-Char logger_stack[TASKSTACKSIZE];
-Char sensor_stack[TASKSTACKSIZE];
-Char uart_stack[TASKSTACKSIZE];
-Char gas_stack[TASKSTACKSIZE];
-Char threshold_stack[TASKSTACKSIZE];
 uint8_t* logfile;
 uint8_t* msg;
 uint8_t fans_on=0;
-Bool buzzer=0;
-Bool remote_mode = AUTOMATIC_MODE;
+bool buzzer=0;
+bool remote_mode = AUTOMATIC_MODE;
 int32_t current_temperature,current_gas,condition;
 double current_humidity;
-Bool fans[5]={0,0,0,0,0};
+bool fans[5]={0,0,0,0,0};
 int32_t temperature_threshold[5]={20,25,30,35,50};
 int32_t humidity_threshold[5]={20,40,60,80,90};
 int32_t gas_threshold[5]={20,40,60,80,90};
-UART_Handle uart;
-UART_Params uartParams;
-QueueHandle_t log_queue;
-
+volatile uint32_t g_ui32Counter = 0;
 uint8_t* error_msg[]={"The Log Queue is full, Data Lost","Log type not found"};
+uint32_t g_ui32SysClock;
 
 typedef enum
 {
@@ -193,42 +203,32 @@ typedef struct
     int32_t time_now;
 }uart_data_t;
 
+
 void exit_handler(void)
 {
     condition=0;
 }
 
-void uart_init(void)
-{
-   /* Create a UART with data processing off. */
-   UART_Params_init(&uartParams);
-   uartParams.writeDataMode = UART_DATA_BINARY;
-   uartParams.readDataMode = UART_DATA_BINARY;
-   uartParams.readReturnMode = UART_RETURN_FULL;
-   uartParams.readEcho = UART_ECHO_OFF;
-   uartParams.baudRate = 115200;
-   uart = UART_open(Board_UART0, &uartParams);
-   if (uart == NULL) {
-       System_abort("Error opening the UART");
-   }
-}
-
 void queue_adder(queue_data_t* data_send)
 {
-    data_send->time_now =  Clock_getTicks();
-    if(Semaphore_getCount(sem_read) < QUEUE_SIZE-1)
+    data_send->time_now =  xTaskGetTickCount();
+    if(log_counter==0)
     {
-        GPIO_write(Board_LED0,0);
-        xQueueSend(log_queue,( void * )data_send,( TickType_t ) 10 );
-        Semaphore_post(sem_read);
+        xSemaphoreGive(sem_read);
     }
-    else if(Semaphore_getCount(sem_read) == QUEUE_SIZE-1)
+    if(log_counter < QUEUE_SIZE-1)
+    {
+        LEDWrite(0x0F, 0x00);
+        //xQueueSend(log_queue,( void * )data_send,(TickType_t)10);
+        log_counter++;
+    }
+    else if(log_counter == QUEUE_SIZE-1)
     {
         data_send->data=0;
         data_send->log_id=LOG_ERROR;
-        GPIO_write(Board_LED0,1);
-        xQueueSend(log_queue,( void * )data_send,( TickType_t ) 10 );
-        Semaphore_post(sem_read);
+        LEDWrite(0x0F, 0x00);
+        //xQueueSend(log_queue,( void * )data_send,(TickType_t)10);
+        log_counter++;
     }
 }
 
@@ -267,144 +267,179 @@ void Fan_update(int8_t value)
     queue_adder(&data_send);
 }
 
-void uartFxn(void* ptr)
+void i2c_init()
 {
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+    GPIOPinConfigure(GPIO_PB2_I2C0SCL);
+    GPIOPinConfigure(GPIO_PB3_I2C0SDA);
+    GPIOPinTypeI2CSCL(GPIO_PORTB_BASE, GPIO_PIN_2);
+    GPIOPinTypeI2C(GPIO_PORTB_BASE, GPIO_PIN_3);
+    SysCtlPeripheralDisable(SYSCTL_PERIPH_I2C0);
+    SysCtlPeripheralReset(SYSCTL_PERIPH_I2C0);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C0);
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_I2C0));
+    I2CMasterInitExpClk(I2C0_BASE, g_ui32SysClock, false);
+ }
+
+void UARTIntHandler(void)
+{
+    uint32_t ui32Status;
     uint8_t command;
     uart_data_t received_data,send_data;
     queue_data_t data_log;
-    while(condition)
+    ui32Status = UARTIntStatus(UART0_BASE, true);
+    UARTIntClear(UART0_BASE, ui32Status);
+    while(UARTCharsAvail(UART0_BASE))
     {
-        UART_read(uart, &command, 1);
-        //UART_read(uart, &recevied_data, sizeof(uart_data_t));
-        send_data.command_id=received_data.command_id;
-        send_data.time_now=Clock_getTicks();
-        data_log.log_id=LOG_COMMAND;
-        data_log.data=received_data.command_id;
-        queue_adder(&data_log);
-        switch(command)
-        {
-            case LOG_DATA:
-            {
-                Semaphore_post(sem_log);
-                break;
-            }
-
-            case GET_TEMPERATURE:
-            {
-                send_data.data=current_temperature;
-                UART_write(uart, &send_data, sizeof(uart_data_t));
-                break;
-            }
-
-            case GET_HUMIDITY:
-            {
-                send_data.data=current_humidity;
-                UART_write(uart, &send_data, sizeof(uart_data_t));
-                break;
-            }
-
-            case GET_GAS:
-            {
-                send_data.data=current_gas;
-                UART_write(uart, &send_data, sizeof(uart_data_t));
-                break;
-            }
-
-            case GET_THRESHOLD:
-            {
-                UART_write(uart, &temperature_threshold, sizeof(temperature_threshold));
-                UART_write(uart, &humidity_threshold, sizeof(humidity_threshold));
-                UART_write(uart, &gas_threshold, sizeof(gas_threshold));
-                break;
-            }
-
-            case GET_FAN:
-            {
-                send_data.data=fans_on;
-                UART_write(uart, &send_data, sizeof(uart_data_t));
-                break;
-            }
-
-            case GET_BUZZER:
-            {
-                send_data.data=buzzer;
-                UART_write(uart, &send_data, sizeof(uart_data_t));
-                break;
-            }
-
-            case CHANGE_MODE:
-            {
-                if(received_data.data<2)
-                {
-                    remote_mode=received_data.data;
-                }
-                break;
-            }
-
-            case CHANGE_TEMPERATURE_THRESHOLD:
-            {
-                UART_read(uart, &temperature_threshold, sizeof(temperature_threshold));
-                break;
-            }
-
-            case CHANGE_HUMIDITY_THRESHOLD:
-            {
-                UART_write(uart, &humidity_threshold, sizeof(temperature_threshold));
-                break;
-            }
-
-            case CHANGE_GAS_THRESHOLD:
-            {
-                UART_write(uart, &gas_threshold, sizeof(temperature_threshold));
-                break;
-            }
-
-            case BUZZER_ON:
-            {
-                remote_mode=MANUAL_MODE;
-                buzzer=1;
-                //buzzer_control();
-                break;
-            }
-
-            case BUZZER_OFF:
-            {
-                remote_mode=MANUAL_MODE;
-                buzzer=0;
-                //buzzer_control();
-                break;
-            }
-
-            case FORCE_CHANGE_FANS:
-            {
-                if(received_data.data<6)
-                {
-                    remote_mode=MANUAL_MODE;
-                    fans_on=received_data.data;
-                    Fan_update(fans_on);
-                }
-                break;
-            }
-
-            default:
-            {
-                break;
-            }
-        }
+        //
+        // Read the next character from the UART and write it back to the UART.
+        //
+        UARTCharPutNonBlocking(UART0_BASE,
+                               UARTCharGetNonBlocking(UART0_BASE));
     }
+//    command=UARTCharGetNonBlocking(UART0_BASE);
+//    //command=UARTCharGet(0);
+//    UARTprintf("UART interrupt received\n\r");
+//    UARTprintf("command received = %c\n\r",command);
+//    send_data.command_id=received_data.command_id;
+//    send_data.time_now=xTaskGetTickCount();
+//    data_log.log_id=LOG_COMMAND;
+//    data_log.data=received_data.command_id;
+//    queue_adder(&data_log);
+//    switch(command)
+//    {
+//        case LOG_DATA:
+//        {
+//            xSemaphoreGive(sem_log);
+//            break;
+//        }
+//
+//        case GET_TEMPERATURE:
+//        {
+//            send_data.data=current_temperature;
+//            UARTprintf("The temperature is %d",send_data.data);
+//            break;
+//        }
+//
+//        case GET_HUMIDITY:
+//        {
+//            send_data.data=current_humidity;
+//            UARTprintf("The humidity is %d",send_data.data);
+//            break;
+//        }
+//
+//        case GET_GAS:
+//        {
+//            send_data.data=current_gas;
+//            UARTprintf("The gas data is %d", send_data.data);
+//            break;
+//        }
+//
+//        case GET_THRESHOLD:
+//        {
+//            UARTprintf("The temperature threshold is %d", temperature_threshold);
+//            UARTprintf("The humidity threshold is %d", humidity_threshold);
+//            UARTprintf("The gas threshold is %d", gas_threshold);
+//            break;
+//        }
+//
+//        case GET_FAN:
+//        {
+//            send_data.data=fans_on;
+//            UARTprintf("The fans on is %d", send_data.data);
+//            break;
+//        }
+//
+//        case GET_BUZZER:
+//        {
+//            send_data.data=buzzer;
+//            UARTprintf("The buzzer is %d", send_data.data);
+//            break;
+//        }
+//
+//        case CHANGE_MODE:
+//        {
+//            if(received_data.data<2)
+//            {
+//                remote_mode=received_data.data;
+//            }
+//            break;
+//        }
+//
+//        case CHANGE_TEMPERATURE_THRESHOLD:
+//        {
+//            //UART_read(uart, &temperature_threshold, sizeof(temperature_threshold));
+//            break;
+//        }
+//
+//        case CHANGE_HUMIDITY_THRESHOLD:
+//        {
+//            //UARTprintf(uart, &humidity_threshold, sizeof(temperature_threshold));
+//            break;
+//        }
+//
+//        case CHANGE_GAS_THRESHOLD:
+//        {
+//            //UARTprintf(uart, &gas_threshold, sizeof(temperature_threshold));
+//            break;
+//        }
+//
+//        case BUZZER_ON:
+//        {
+//            remote_mode=MANUAL_MODE;
+//            buzzer=1;
+//            //buzzer_control();
+//            break;
+//        }
+//
+//        case BUZZER_OFF:
+//        {
+//            remote_mode=MANUAL_MODE;
+//            buzzer=0;
+//            //buzzer_control();
+//            break;
+//        }
+//
+//        case FORCE_CHANGE_FANS:
+//        {
+//            if(received_data.data<6)
+//            {
+//                remote_mode=MANUAL_MODE;
+//                fans_on=received_data.data;
+//                Fan_update(fans_on);
+//            }
+//            break;
+//        }
+//
+//        default:
+//        {
+//            break;
+//        }
+//    }
 }
 
 void loggerFxn(void* ptr)
 {
-    uint8_t* time_str = (uint8_t*)malloc(30);
+    uint8_t time_str[30];
     uint8_t timeslice;
     queue_data_t received_data;
     while (condition)
     {
+        UARTprintf("Entering logger task\n");
          //message queue receive
-         Semaphore_pend(sem_log, BIOS_WAIT_FOREVER);
-         Semaphore_pend(sem_read, BIOS_WAIT_FOREVER);
-         xQueueReceive(log_queue, &(received_data), ( TickType_t ) 10 );
+         xSemaphoreTake(sem_log, portMAX_DELAY);
+         xSemaphoreTake(sem_read, portMAX_DELAY);
+         while(log_counter<1);
+         if(log_counter>0)
+         {
+
+             printf("hello this is sanika\n");
+             /*if(xQueueReceive(log_queue, &(received_data), portMAX_DELAY)==0)
+             {
+                 continue;
+             }*/
+         }
+         log_counter--;
          sprintf(time_str,"time: %d sec %d msec\t",received_data.time_now/1000,received_data.time_now%1000);
          strcpy(msg,time_str);
          timeslice=strlen(time_str);
@@ -464,47 +499,20 @@ void loggerFxn(void* ptr)
                 break;
             }
          }
-         if(Semaphore_getCount(sem_read))
+         if(log_counter)
          {
-             Semaphore_post(sem_log);
+             xSemaphoreGive(sem_log);
+             xSemaphoreGive(sem_read);
          }
          else
          {
-             UART_write(uart,msg,strlen(msg));
+             UARTprintf("The message is %s", msg);
              sprintf(msg+timeslice,"LOG_END\n\r");
          }
-         UART_write(uart,msg,strlen(msg));
+         UARTprintf("The message is %s", msg);
     }
     free(msg);
-}
-
-void InitI2C0(void)
-{
-    //enable I2C module 0
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C0);
-
-    //reset module
-    SysCtlPeripheralReset(SYSCTL_PERIPH_I2C0);
-
-    //enable GPIO peripheral that contains I2C 0
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
-
-    //Configure the pin muxing for I2C0 functions on port B2 and B3.
-    GPIOPinConfigure(GPIO_PB2_I2C0SCL);
-    GPIOPinConfigure(GPIO_PB3_I2C0SDA);
-
-    //Select the I2C function for these pins.
-    GPIOPinTypeI2CSCL(GPIO_PORTB_BASE, GPIO_PIN_2);
-    GPIOPinTypeI2C(GPIO_PORTB_BASE, GPIO_PIN_3);
-
-    //Enable and initialize the I2C0 master module.  Use the system clock for
-    //the I2C0 module.  The last parameter sets the I2C data transfer rate.
-    //If false the data rate is set to 100kbps and if true the data rate will
-    //be set to 400kbps.
-    I2CMasterInitExpClk(I2C0_BASE, SysCtlClockGet(), false);
-
-    //clear I2C FIFOs
-    HWREG(I2C0_BASE + I2C_O_FIFOCTL) = 80008000;
+    vTaskDelete(NULL);
 }
 
 void gasFxn(void* ptr)
@@ -513,6 +521,7 @@ void gasFxn(void* ptr)
     while (condition)
     {
        vTaskDelay(GAS_PERIOD);
+       UARTprintf("Gas Task Done\n\r");
        SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC1);
        while(!SysCtlPeripheralReady(SYSCTL_PERIPH_ADC1));
        GPIOPinTypeADC(GPIO_PORTE_BASE,GPIO_PIN_2);
@@ -530,6 +539,7 @@ void gasFxn(void* ptr)
        data_send.log_id=LOG_GAS;
        queue_adder(&data_send);
     }
+    vTaskDelete(NULL);
 }
 
 void thresholdFxn(void* ptr)
@@ -539,7 +549,7 @@ void thresholdFxn(void* ptr)
     while (condition)
     {
         vTaskDelay(THRESHOLD_PERIOD);
-        //
+        UARTprintf("Entering Threshold task\n");
         for(i=0;i<5;i++)
         {
             if((current_temperature<temperature_threshold[i])&&(current_humidity<humidity_threshold[i])&&(current_gas<gas_threshold[i]))
@@ -556,6 +566,7 @@ void thresholdFxn(void* ptr)
         data_send.log_id=LOG_THRESHOLD;
         queue_adder(&data_send);
     }
+    vTaskDelete(NULL);
 }
 
 void sensorFxn(void* ptr)
@@ -565,6 +576,7 @@ void sensorFxn(void* ptr)
     while (condition)
     {
        vTaskDelay(SENSOR_PERIOD);
+       UARTprintf("Sensor Task Done\n\r");
        I2CMasterSlaveAddrSet(I2C0_BASE, SI7021_SLAVE_ADDRESS, false);
        I2CMasterDataPut(I2C0_BASE,TEMP_ADDRESS);
        I2CMasterControl(I2C0_BASE,I2C_MASTER_CMD_SINGLE_SEND);
@@ -597,61 +609,54 @@ void sensorFxn(void* ptr)
        data_send.log_id=LOG_HUMIDITY;
        queue_adder(&data_send);
     }
+    vTaskDelete(NULL);
 }
 
-/*
- *  ======== main ========
- */
+// Main function
 int main(void)
 {
-    uint32_t output_clock_rate_hz;
-    output_clock_rate_hz = ROM_SysCtlClockFreqSet(
+    // Initialize system clock to 120 MHz
+    g_ui32SysClock = MAP_SysCtlClockFreqSet(
                                (SYSCTL_XTAL_25MHZ | SYSCTL_OSC_MAIN |
                                 SYSCTL_USE_PLL | SYSCTL_CFG_VCO_480),
-                               SYSTEM_CLOCK);
-    ASSERT(output_clock_rate_hz == SYSTEM_CLOCK);
-    Task_Params uart_task,logger_task,sensor_task,gas_task,threshold_task;
-    /* Call board init functions */
-    Board_initGeneral();
-    Board_initGPIO();
-    Board_initI2C();
-    Board_initUART();
-    InitI2C0();
-    condition = 1;
-    log_queue = xQueueCreate(QUEUE_SIZE, sizeof(queue_data_t));
-    msg = (uint8_t*)malloc(STR_SIZE);
+                               12e7);
+    g_ui32Counter = 0;
+    // Set up the UART which is connected to the virtual COM port
+    UARTStdioConfig(0, 115200, 12e7);
+    condition=1;
+    i2c_init();
+    SysTickPeriodSet(12e4);
+    SysTickIntEnable();
+    SysTickEnable();
 
-    //semaphore
-    Semaphore_Params_init(&sem_log_params);
-    Semaphore_construct(&sem_log_struct, 0, &sem_log_params);
-    sem_log = Semaphore_handle(&sem_log_struct);
-    Semaphore_Params_init(&sem_read_params);
-    Semaphore_construct(&sem_read_struct, 0, &sem_read_params);
-    sem_read = Semaphore_handle(&sem_read_struct);
+    // Initialize the GPIO pins for the Launchpad
+    PinoutSet(false, false);
 
-    xTaskCreate(sensorFxn, (const portCHAR *)"Sensorstart",
-                    configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    // Create demo tasks
+    xTaskCreate(sensorFxn, (const portCHAR *)"sensor",
+                TASKSTACKSIZE, NULL, 1, NULL);
 
-    xTaskCreate(thresholdFxn, (const portCHAR *)"thresholdstart",
-                configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(thresholdFxn, (const portCHAR *)"threshold",
+                TASKSTACKSIZE, NULL, 1, NULL);
 
-    xTaskCreate(loggerFxn, (const portCHAR *)"loggerstart",
-                configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+//    xTaskCreate(loggerFxn, (const portCHAR *)"logger",
+//                TASKSTACKSIZE, NULL, 1, NULL);
 
-    xTaskCreate(gasFxn, (const portCHAR *)"gassensor",
-                configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(gasFxn, (const portCHAR *)"gas",
+                TASKSTACKSIZE, NULL, 1, NULL);
 
-    xTaskCreate(uartFxn, (const portCHAR *)"uartcomm",
-                configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-
-     /* Turn on user LED */
-
-    System_printf("Starting the example\nSystem provider is set to SysMin. "
-                  "Halt the target to view any SysMin contents in ROV.\n");
-    /* SysMin will only print to the console when you call flush or exit */
-    System_flush();
-    uart_init();
-    /* Start BIOS */
     vTaskStartScheduler();
-    return (0);
+    return 0;
+}
+
+/*  ASSERT() Error function
+ *
+ *  failed ASSERTS() from driverlib/debug.h are executed in this function
+ */
+void __error__(char *pcFilename, uint32_t ui32Line)
+{
+    // Place a breakpoint here to capture errors until logging routine is finished
+    while (1)
+    {
+    }
 }
