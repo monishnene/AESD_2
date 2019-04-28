@@ -39,13 +39,18 @@
 #ifndef DEBUG
 #define printf(fmt, ...) (0)
 #endif
+#define BAUDRATE B38400    
+#define UART4 "/dev/ttyO4"	 
+#define _POSIX_SOURCE 1 /* POSIX compliant source */
+#define FALSE 0
+#define TRUE 1
+#define STR_SIZE 200
+#define logger_port 8000
 
 /*****************************
 * Global variables
 * shared mem and semaphores
 *****************************/
-#define STR_SIZE 200
-#define logger_port 8000
 uint8_t* logfile;
 uint8_t* str;
 sem_t* sem_logfile;
