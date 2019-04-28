@@ -6,114 +6,41 @@
  *
  * This is a simple demonstration project of FreeRTOS 8.2 on the Tiva Launchpad
  * EK-TM4C1294XL.  TivaWare driverlib sourcecode is included.
+#include <errno.h>
  */
-
-#include <stdint.h>
+#include <errno.h>
 #include <stdbool.h>
-#include "main.h"
-#include "drivers/pinout.h"
-#include "utils/uartstdio.h"
-
-
-// TivaWare includes
-#include "driverlib/sysctl.h"
-#include "driverlib/debug.h"
-#include "driverlib/rom.h"
-#include "driverlib/rom_map.h"
-
-// FreeRTOS includes
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 #include "FreeRTOSConfig.h"
 #include "FreeRTOS.h"
+#include "main.h"
+#include "math.h"
 #include "task.h"
 #include "queue.h"
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdlib.h>
+#include "semphr.h"
+#include "timers.h"
+#include "drivers/pinout.h"
+#include "driverlib/adc.h"
+#include "driverlib/debug.h"
+#include "driverlib/gpio.h"
+#include "driverlib/i2c.h"
+#include "driverlib/interrupt.h"
+#include "driverlib/pin_map.h"
+#include "drivers/pinout.h"
+#include "driverlib/rom.h"
+#include "driverlib/rom_map.h"
+#include "driverlib/ssi.h"
+#include "driverlib/sysctl.h"
+#include "driverlib/systick.h"
+#include "driverlib/timer.h"
+#include "driverlib/uart.h"
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "inc/hw_ints.h"
-#include "driverlib/uart.h"
-#include "driverlib/gpio.h"
-#include "driverlib/pin_map.h"
-#include "driverlib/rom.h"
-#include "driverlib/rom_map.h"
-#include "driverlib/sysctl.h"
-#include "driverlib/interrupt.h"
-#include "driverlib/timer.h"
-#include "driverlib/i2c.h"
 #include "utils/uartstdio.h"
-#include "FreeRTOS.h"
-#include "drivers/pinout.h"
-#include "utils/uartstdio.h"
-#include <errno.h>
-#include <string.h>
-#include <stdio.h>
-#include "math.h"
-#include "inc/hw_memmap.h"
-#include "driverlib/rom_map.h"
-#include "driverlib/sysctl.h"
-#include "utils/uartstdio.h"
-#include "driverlib/pin_map.h"
-#include "drivers/pinout.h"
-#include "driverlib/gpio.h"
-#include "utils/uartstdio.h"
-#include "inc/hw_memmap.h"
-#include "driverlib/rom_map.h"
-#include "driverlib/sysctl.h"
-#include "utils/uartstdio.h"
-#include "driverlib/pin_map.h"
-#include <stdlib.h>
-// TivaWare includes
-#include "driverlib/sysctl.h"
-#include "driverlib/debug.h"
-#include "driverlib/rom.h"
-#include "driverlib/rom_map.h"
-#include "driverlib/i2c.h"
-
-#include <stdbool.h>
-#include "inc/hw_types.h"
-#include "driverlib/rom.h"
-#include "driverlib/uart.h"
-#include "utils/uartstdio.h"
-#include "driverlib/adc.h"
-#include "driverlib/rom.h"
-#include <stdlib.h>
-#include "inc/hw_memmap.h"
-#include "driverlib/rom_map.h"
-#include "driverlib/sysctl.h"
-#include "utils/uartstdio.h"
-#include "driverlib/pin_map.h"
-// TivaWare includes
-#include "inc/hw_types.h"
-#include "driverlib/rom.h"
-#include "driverlib/uart.h"
-#include "utils/uartstdio.h"
-#include "driverlib/adc.h"
-#include "driverlib/rom.h"
-#include "driverlib/sysctl.h"
-#include "driverlib/debug.h"
-#include "driverlib/rom.h"
-#include "driverlib/rom_map.h"
-#include "driverlib/i2c.h"
-#include "driverlib/sysctl.h"
-#include "driverlib/debug.h"
-#include "driverlib/rom.h"
-#include "driverlib/rom_map.h"
-#include "FreeRTOS.h"
-#include "FreeRTOSConfig.h"
-#include "task.h"
-#include "queue.h"
-#include "timers.h"
-#include "semphr.h"
-#include "inc/hw_memmap.h"
-#include "driverlib/gpio.h"
-#include "driverlib/pin_map.h"
-#include "driverlib/ssi.h"
-#include "driverlib/sysctl.h"
-#include "queue.h"
-#include "driverlib/systick.h"
-#include "semphr.h"
-#include "drivers/pinout.h"
 
 #define MQ_SIZE         (10)            // Size of the message queue
 #define TASKSTACKSIZE   1024
