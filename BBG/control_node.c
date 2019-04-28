@@ -261,7 +261,7 @@ void uart_init(void)
 	  Open modem device for reading and writing and not as controlling tty
 	  because we don't want to get killed if linenoise sends CTRL-C.
 	*/
-	 fd_uart0 = open(UART0, O_RDWR | O_NOCTTY ); 
+	 /*fd_uart0 = open(UART0, O_RDWR | O_NOCTTY ); 
 	 if (fd_uart0 <0)
 	{
 		printf("uart0 not found\n");
@@ -269,7 +269,7 @@ void uart_init(void)
 	else
 	{
 		printf("uart0 found\n");
-	}
+	}*/
 	fd_uart4 = open(UART4, O_RDWR | O_NOCTTY ); 
  	if (fd_uart4 <0)
 	{
@@ -279,7 +279,7 @@ void uart_init(void)
 	{
 		printf("uart4 found\n");
 	}
-	tcgetattr(fd_uart0,&oldtio0); /* save current serial port settings */
+	//tcgetattr(fd_uart0,&oldtio0); /* save current serial port settings */
 	tcgetattr(fd_uart4,&oldtio4); /* save current serial port settings */
 	/* 
 	  BAUDRATE: Set bps rate. You could also use cfsetispeed and cfsetospeed.
@@ -357,13 +357,13 @@ void uart_init(void)
 	/* 
 	  now clean the modem line and activate the settings for the port
 	*/
-	 tcflush(fd_uart0, TCIFLUSH);
-	 tcsetattr(fd_uart0,TCSANOW,&newtio0);
+	 //tcflush(fd_uart0, TCIFLUSH);
+	 //tcsetattr(fd_uart0,TCSANOW,&newtio0);
 	 tcflush(fd_uart4, TCIFLUSH);
 	 tcsetattr(fd_uart4,TCSANOW,&newtio4);
 }
 
-int uart_write(char data_write[])
+/*int uart_write(char data_write[])
 {
 	res = write(fd_uart0,data_write,strlen(data_write));
 	return 0;
@@ -374,9 +374,9 @@ char uart_read(void)
 	char data_read[255];
 	res = read(fd_uart0,data_read,255); 
     	buffer_out[res]=0;             /* set end of string, so we can printf */
-    	printf(":%s:%d\n",data_read, res);
+    	/*printf(":%s:%d\n",data_read, res);
 	return data_read;
-}
+}*/
 
 int32_t main(int32_t argc, uint8_t **argv)
 {
