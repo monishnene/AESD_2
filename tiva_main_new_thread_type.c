@@ -121,6 +121,7 @@ typedef enum
     BUZZER_OFF='L',
     FORCE_CHANGE_FANS='M',
     GET_BUZZER='N',
+    RETRY_BIST='O',
 }uart_command_t;
 
 typedef struct
@@ -348,6 +349,11 @@ void UARTFxn(void* ptr)
                     Fan_update(fans_on);
                 }
                 break;
+            }
+                
+            case RETRY_BIST:
+            {
+                //bist();
             }
 
             default:
