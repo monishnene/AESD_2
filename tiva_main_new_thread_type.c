@@ -220,13 +220,21 @@ void UARTIntHandler(void* ptr)
 
 void uart_init(void)
 {
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
-    GPIOPinConfigure(GPIO_PA0_U0RX);
-    GPIOPinConfigure(GPIO_PA1_U0TX);
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
-    UARTClockSourceSet(UART0_BASE, UART_CLOCK_PIOSC);
-    GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
-    UARTStdioConfig(0, 115200, 16000000);
+//    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+//    GPIOPinConfigure(GPIO_PA0_U0RX);
+//    GPIOPinConfigure(GPIO_PA1_U0TX);
+//    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
+//    UARTClockSourceSet(UART0_BASE, UART_CLOCK_PIOSC);
+//    GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
+    GPIOPinConfigure(GPIO_PC4_U7RX);
+    GPIOPinConfigure(GPIO_PC5_U7TX);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART7);
+    UARTClockSourceSet(UART7_BASE, UART_CLOCK_PIOSC);
+    GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_4 | GPIO_PIN_5);
+
+    UARTStdioConfig(7, 115200, 12e7);
 }
 
 void UARTFxn(void* ptr)
@@ -241,7 +249,7 @@ void UARTFxn(void* ptr)
         data_log.log_id=LOG_COMMAND;
         data_log.data=command;
         queue_adder(&data_log);
-        send_data.command_id=command;
+        send_data.command_id=(uart_command_t)command;
         send_data.time_now=xTaskGetTickCount();
         switch(command)
         {
@@ -254,21 +262,21 @@ void UARTFxn(void* ptr)
             case GET_TEMPERATURE:
             {
                 send_data.data=current_temperature;
-                UARTwrite(&send_data,sizeof(uart_data_t));
+                UARTwrite((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case GET_HUMIDITY:
             {
                 send_data.data=current_humidity;
-                UARTwrite(&send_data,sizeof(uart_data_t));
+                UARTwrite((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case GET_GAS:
             {
                 send_data.data=current_gas;
-                UARTwrite(&send_data,sizeof(uart_data_t));
+                UARTwrite((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
@@ -277,23 +285,23 @@ void UARTFxn(void* ptr)
                 UARTprintf("The temperature threshold is %d", temperature_threshold);
                 UARTprintf("The humidity threshold is %d", humidity_threshold);
                 UARTprintf("The gas threshold is %d", gas_threshold);
-                UARTwrite(&temperature_threshold,sizeof(int32_t)*5);
-                UARTwrite(&humidity_threshold,sizeof(int32_t)*5);
-                UARTwrite(&gas_threshold,sizeof(int32_t)*5);
+                UARTwrite((void*)&temperature_threshold,sizeof(int32_t)*5);
+                UARTwrite((void*)&humidity_threshold,sizeof(int32_t)*5);
+                UARTwrite((void*)&gas_threshold,sizeof(int32_t)*5);
                 break;
             }
 
             case GET_FAN:
             {
                 send_data.data=fans_on;
-                UARTwrite(&send_data,sizeof(uart_data_t));
+                UARTwrite((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case GET_BUZZER:
             {
                 send_data.data=buzzer;
-                UARTwrite(&send_data,sizeof(uart_data_t));
+                UARTwrite((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
@@ -350,7 +358,7 @@ void UARTFxn(void* ptr)
                 }
                 break;
             }
-                
+
             case RETRY_BIST:
             {
                 //bist();
@@ -387,7 +395,6 @@ void loggerFxn(void* ptr)
          log_counter--;
          sprintf(time_str,"time: %d sec %d msec\t",received_data.time_now/1000,received_data.time_now%1000);
          timeslice=strlen(time_str);
-         bzero(msg,STR_SIZE);
          memcpy(msg,time_str,timeslice);
          switch(received_data.log_id)
          {
@@ -455,7 +462,6 @@ void loggerFxn(void* ptr)
              xSemaphoreTake(sem_uart,portMAX_DELAY);
              UARTprintf(msg);
              xSemaphoreGive(sem_uart);
-             bzero(msg+timeslice,STR_SIZE-timeslice);
              sprintf(msg+timeslice,"LOG_END\n\r");
          }
          xSemaphoreTake(sem_uart,portMAX_DELAY);
@@ -566,7 +572,7 @@ int main(void)
     g_ui32SysClock = MAP_SysCtlClockFreqSet(( SYSCTL_XTAL_25MHZ | SYSCTL_OSC_MAIN | SYSCTL_USE_PLL | SYSCTL_CFG_VCO_480), 12e7);
     g_ui32Counter = 0;
     // Set up the UART which is connected to the virtual COM port
-    UARTStdioConfig(0, 115200, 12e7);
+    UARTStdioConfig(7, 115200, 12e7);
     condition=1;
     i2c_init();
     SysTickPeriodSet(12e4);
