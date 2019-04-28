@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -94,8 +95,6 @@ volatile int STOP=FALSE;
 #define TEMP_ADDRESS (0xE3)
 #define HUMIDITY_ADDRESS (0xE5)
 
-QueueHandle_t log_queue;
-SemaphoreHandle_t sem_log,sem_read;
 static volatile uint32_t log_counter=0;
 uint8_t log_type;
 uint8_t* logfile;
@@ -155,7 +154,8 @@ typedef enum
     BUZZER_ON='K',
     BUZZER_OFF='L',
     FORCE_CHANGE_FANS='M',
-    GET_BUZZER='N',
+    GET_BUZZER='N',	
+    RETRY_BIST='O',
 }uart_command_t;
 
 typedef struct
@@ -171,7 +171,7 @@ uart_data_t send_data, received_data;
 ******************************/
 void* logger(void* ptr)
 {	
-	uint32_t size=0;
+	uint32_t size=0,counter=0;
 	FILE* fptr;
 	uart_data_t command_sent;
 	command_sent.command_id = LOG_DATA;
@@ -180,16 +180,25 @@ void* logger(void* ptr)
 	while(condition)
 	{
 		sem_wait(sem_logger);
-		sem_wait(sem_uart);
-		//uart_send
-		//receive data from UART		
-		sem_post(sem_uart);
 		sem_wait(sem_logfile);
-		fptr=fopen(logfile,"a");
-		printf("Log command sent\n");		
-		//n=fwrite(msg,1,size,fptr);
+		fptr=fopen(logfile,"a");		
+		//uart_send
+		counter=0;
+		while(1)
+		{
+			size=read(fd_uart4,(void*)msg,sizeof(STR_SIZE));
+			n=fwrite(msg,1,size,fptr);
+			counter++;
+			if(!strncmp(msg+size-9,"LOG_END\n\r",9))
+			{
+				printf("Is it stuck in loop? loop:%d size:%d\n",counter,size);
+				break;
+			} 				
+		}
 		fclose(fptr);
 		sem_post(sem_logfile);
+		//receive data from UART		
+		sem_post(sem_uart);
 	}
 	free(msg);
 	pthread_exit(ptr);
@@ -219,6 +228,9 @@ void logfile_setup(void)
 
 static void log_time(int sig, siginfo_t *si, void *uc)
 {
+	uint8_t input ='A';
+	sem_wait(sem_uart);
+	write(fd_uart4,(void*)&input,1);
 	sem_post(sem_logger);
 	//heartbeat();
 }
@@ -257,19 +269,6 @@ void system_end(int sig)
 
 void uart_init(void)
 {
-	/* 
-	  Open modem device for reading and writing and not as controlling tty
-	  because we don't want to get killed if linenoise sends CTRL-C.
-	*/
-	 /*fd_uart0 = open(UART0, O_RDWR | O_NOCTTY ); 
-	 if (fd_uart0 <0)
-	{
-		printf("uart0 not found\n");
-	}
-	else
-	{
-		printf("uart0 found\n");
-	}*/
 	fd_uart4 = open(UART4, O_RDWR | O_NOCTTY ); 
  	if (fd_uart4 <0)
 	{
@@ -279,7 +278,6 @@ void uart_init(void)
 	{
 		printf("uart4 found\n");
 	}
-	//tcgetattr(fd_uart0,&oldtio0); /* save current serial port settings */
 	tcgetattr(fd_uart4,&oldtio4); /* save current serial port settings */
 	/* 
 	  BAUDRATE: Set bps rate. You could also use cfsetispeed and cfsetospeed.
@@ -289,7 +287,6 @@ void uart_init(void)
 	  CLOCAL  : local connection, no modem contol
 	  CREAD   : enable receiving characters
 	*/
-	 newtio0.c_cflag = BAUDRATE | CRTSCTS | CS8 | CLOCAL | CREAD;
 	 newtio4.c_cflag = BAUDRATE | CRTSCTS | CS8 | CLOCAL | CREAD;
 	/*
 	  IGNPAR  : ignore bytes with parity errors
@@ -297,19 +294,16 @@ void uart_init(void)
 		    will not terminate input)
 	  otherwise make device raw (no other input processing)
 	*/
-	 newtio0.c_iflag = IGNPAR | ICRNL;
 	 newtio4.c_iflag = IGNPAR | ICRNL; 
 	/*
 	 Raw output.
 	*/
-	 newtio0.c_oflag = 0;
 	 newtio4.c_oflag = 0;
 	 
 	/*
 	  ICANON  : enable canonical input
 	  disable all echo functionality, and don't send signals to calling program
 	*/
-	 newtio0.c_lflag = ICANON;
 	 newtio4.c_lflag = ICANON;
 	 
 	/* 
@@ -317,25 +311,6 @@ void uart_init(void)
 	  default values can be found in /usr/include/termios.h, and are given
 	  in the comments, but we don't need them here
 	*/
-
-	 newtio0.c_cc[VINTR]    = 0;     /* Ctrl-c */ 
-	 newtio0.c_cc[VQUIT]    = 0;     /* Ctrl-\ */
-	 newtio0.c_cc[VERASE]   = 0;     /* del */
-	 newtio0.c_cc[VKILL]    = 0;     /* @ */
-	 newtio0.c_cc[VEOF]     = 4;     /* Ctrl-d */
-	 newtio0.c_cc[VTIME]    = 0;     /* inter-character timer unused */
-	 newtio0.c_cc[VMIN]     = 1;     /* blocking read until 1 character arrives */
-	 newtio0.c_cc[VSWTC]    = 0;     /* '\0' */
-	 newtio0.c_cc[VSTART]   = 0;     /* Ctrl-q */ 
-	 newtio0.c_cc[VSTOP]    = 0;     /* Ctrl-s */
-	 newtio0.c_cc[VSUSP]    = 0;     /* Ctrl-z */
-	 newtio0.c_cc[VEOL]     = 0;     /* '\0' */
-	 newtio0.c_cc[VREPRINT] = 0;     /* Ctrl-r */
-	 newtio0.c_cc[VDISCARD] = 0;     /* Ctrl-u */
-	 newtio0.c_cc[VWERASE]  = 0;     /* Ctrl-w */
-	 newtio0.c_cc[VLNEXT]   = 0;     /* Ctrl-v */
-	 newtio0.c_cc[VEOL2]    = 0;     /* '\0' */
-		
 	 newtio4.c_cc[VINTR]    = 0;     /* Ctrl-c */ 
 	 newtio4.c_cc[VQUIT]    = 0;     /* Ctrl-\ */
 	 newtio4.c_cc[VERASE]   = 0;     /* del */
@@ -365,14 +340,14 @@ void uart_init(void)
 
 /*int uart_write(char data_write[])
 {
-	res = write(fd_uart0,data_write,strlen(data_write));
+	write(fd_uart0,data_write,strlen(data_write));
 	return 0;
 }
 
 char uart_read(void)
 {
 	char data_read[255];
-	res = read(fd_uart0,data_read,255); 
+	read(fd_uart0,data_read,255); 
     	buffer_out[res]=0;             /* set end of string, so we can printf */
     	/*printf(":%s:%d\n",data_read, res);
 	return data_read;
@@ -381,7 +356,8 @@ char uart_read(void)
 int32_t main(int32_t argc, uint8_t **argv)
 {
 	uint8_t input=0;
-	int32_t error=0;	
+	int32_t error=0;
+	uint32_t counter=0;	
 	pid_t process_id = getpid();	
 	if(argc<2)
 	{
@@ -434,8 +410,11 @@ int32_t main(int32_t argc, uint8_t **argv)
 			printf("\nEnter new command:\n");
 		}				
 		scanf("%c",&input);
+		sem_wait(sem_uart);		
+		write(fd_uart4,(void*)&input,1);
+		send_data.data=0;
+		send_data.time_now=0;
 		send_data.command_id = input;
-		res = write(fd_uart0,send_data,strlen(send_data));
 		switch(input)
 		{
 			case LOG_DATA:
@@ -445,122 +424,116 @@ int32_t main(int32_t argc, uint8_t **argv)
 			}
 
 			case GET_TEMPERATURE:
-			{
-																		        				res = read(fd_uart0,received_data,sizeof(received_data)); 				
-				//send_data.data=current_temperature;
-				//uart_write(
-				//UART_write(uart, &send_data, sizeof(uart_data_t));
+			{			
+				read(fd_uart4,(void*)&received_data,sizeof(received_data));
+				sem_post(sem_uart);
+				printf("Temperature: %dC° %dF° %dK°\n",received_data.data,((9*received_data.data)/5)+32,received_data.data+273);
 				break;	
 			}
 
 			case GET_HUMIDITY:
 			{
-				res= read(fd_uart0,received_data,sizeof(received_data));
-				//send_data.data=current_humidity;
-				//UART_write(uart, &send_data, sizeof(uart_data_t));
+				read(fd_uart4,(void*)&received_data,sizeof(received_data));
+				sem_post(sem_uart);
+				printf("Humidity: %d%%\n",received_data.data);
 				break;
 			}
 
 			case GET_GAS:
 			{
-				res=read(fd_uart0,received_data,sizeof(received_data));
-
-				//send_data.data=current_gas;
-				//UART_write(uart, &send_data, sizeof(uart_data_t));
+				read(fd_uart4,(void*)&received_data,sizeof(received_data));
+				sem_post(sem_uart);
+				printf("CO value: %dppm\n",received_data.data);
 				break;
 			}
 
 			case GET_THRESHOLD:
 			{
-				res=read(fd_uart0,received_data,sizeof(received_data));
-				//UART_write(uart, &temperature_threshold, sizeof(temperature_threshold));
-				//UART_write(uart, &humidity_threshold, sizeof(humidity_threshold));
-				//UART_write(uart, &gas_threshold, sizeof(gas_threshold));
+				read(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));
+				read(fd_uart4,(void*)&humidity_threshold,5*sizeof(int32_t));
+				read(fd_uart4,(void*)&gas_threshold,5*sizeof(int32_t));
+				sem_post(sem_uart);				
+				printf("Temperature Thresholds: %d %d %d %d %d", temperature_threshold[0],temperature_threshold[1],temperature_threshold[2],temperature_threshold[3],temperature_threshold[4]);
+				printf("Temperature Thresholds: %d %d %d %d %d", humidity_threshold[0],humidity_threshold[1],humidity_threshold[2],humidity_threshold[3],humidity_threshold[4]);
+				printf("Temperature Thresholds: %d %d %d %d %d", gas_threshold[0],gas_threshold[1],gas_threshold[2],gas_threshold[3],gas_threshold[4]);				
 				break;
 			}
 
 			case GET_FAN:
 			{
-				res=read(fd_uart0,received_data,sizeof(received_data));
-				//send_data.data=fans_on;
-				//UART_write(uart, &send_data, sizeof(uart_data_t));
+				read(fd_uart4,(void*)&received_data,sizeof(received_data));
+				sem_post(sem_uart);
+				printf("%d fans are on\n",received_data.data);
 				break;
 			}
 
 			case GET_BUZZER:
 			{
-				res=read(fd_uart0,received_data,sizeof(received_data));
-				//send_data.data=buzzer;
-				//UART_write(uart, &send_data, sizeof(uart_data_t));
+				read(fd_uart4,(void*)&received_data,sizeof(received_data));
+				sem_post(sem_uart);
+				if(received_data.data)
+				{
+					printf("Buzzer is on\n");
+					//buzzer_control(1);
+				}
+				else
+				{
+					printf("Buzzer is off\n");
+					//buzzer_control(0);
+				}
 				break;
 			}
 
 			case CHANGE_MODE:
 			{
-				if(received_data.data<2)
-				{
-				    remote_mode=received_data.data;
-				}
+				sem_post(sem_uart);
 				break;
 			}
 
 			case CHANGE_TEMPERATURE_THRESHOLD:
 			{
-				scanf("%d", &temperature_threshold[0]);
-				scanf("%d", &temperature_threshold[1]);
-				scanf("%d", &temperature_threshold[2]);
-				scanf("%d", &temperature_threshold[3]);
-				scanf("%d", &temperature_threshold[4]);
-				//UART_read(uart, &temperature_threshold, sizeof(temperature_threshold));
+				scanf("%d %d %d %d %d", &temperature_threshold[0],&temperature_threshold[1],&temperature_threshold[2],&temperature_threshold[3],&temperature_threshold[4]);
+				write(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));
+				sem_post(sem_uart);
 				break;
 			}
 
 			case CHANGE_HUMIDITY_THRESHOLD:
 			{
-				scanf("%d", &humidity_threshold[0]);
-				scanf("%d", &humidity_threshold[1]);
-				scanf("%d", &humidity_threshold[2]);
-				scanf("%d", &humidity_threshold[3]);
-				scanf("%d", &humidity_threshold[4]);
-				//UART_write(uart, &humidity_threshold, sizeof(temperature_threshold));
+				scanf("%d %d %d %d %d", &humidity_threshold[0],&humidity_threshold[1],&humidity_threshold[2],&humidity_threshold[3],&humidity_threshold[4]);
+				write(fd_uart4,(void*)&humidity_threshold,5*sizeof(int32_t));
+				sem_post(sem_uart);
 				break;
 			}
 
 			case CHANGE_GAS_THRESHOLD:
 			{
-				scanf("%d", &gas_threshold[0]);
-				scanf("%d", &gas_threshold[1]);
-				scanf("%d", &gas_threshold[2]);
-				scanf("%d", &gas_threshold[3]);
-				scanf("%d", &gas_threshold[4]);
-				//UART_write(uart, &gas_threshold, sizeof(temperature_threshold));
+				scanf("%d %d %d %d %d", &gas_threshold[0],&gas_threshold[1],&gas_threshold[2],&gas_threshold[3],&gas_threshold[4]);
+				write(fd_uart4,(void*)&gas_threshold,5*sizeof(int32_t));
+				sem_post(sem_uart);
 				break;
 			}
 
 			case BUZZER_ON:
 			{
-				remote_mode=MANUAL_MODE;
-				buzzer=1;
-				buzzer_control();
+				//buzzer_control(1);
+				sem_post(sem_uart);
 				break;
 			}
 
 			case BUZZER_OFF:
 			{
-				remote_mode=MANUAL_MODE;
-				buzzer=0;
-				buzzer_control();
+				//buzzer_control(0);
+				sem_post(sem_uart);
 				break;
 			}
 
 			case FORCE_CHANGE_FANS:
 			{
-				if(received_data.data<6)
-				{
-					remote_mode=MANUAL_MODE;
-					fans_on=received_data.data;
-					Fan_update(fans_on);
-				}
+				printf("How many fans to turn on??\n");
+				scanf("%d",&(send_data.data));		
+				write(fd_uart4,(void*)&send_data,sizeof(send_data));
+				sem_post(sem_uart);
 				break;
 			}
 
