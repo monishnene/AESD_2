@@ -273,10 +273,8 @@ void UARTIntHandler(void )
     uart_data_t send_data, received_data;
     queue_data_t data_log;
     uint32_t status = UARTIntStatus(UART7_BASE, true);
-    UARTIntClear(UART7_BASE, status);
-    uint8_t command;
     send_data.time_now=xTaskGetTickCount();
-    command=UARTCharGet(UART7_BASE);
+    uint8_t command=UARTCharGet(UART7_BASE);
     data_log.log_id=LOG_COMMAND;
     data_log.data=command;
     queue_adder(&data_log);
@@ -313,9 +311,9 @@ void UARTIntHandler(void )
 
         case GET_THRESHOLD:
         {
-            UARTprintf("The temperature threshold is %d", temperature_threshold);
-            UARTprintf("The humidity threshold is %d", humidity_threshold);
-            UARTprintf("The gas threshold is %d", gas_threshold);
+            //uartprintf("The temperature threshold is %d", temperature_threshold);
+            //uartprintf("The humidity threshold is %d", humidity_threshold);
+            //uartprintf("The gas threshold is %d", gas_threshold);
             uart_send((void*)&temperature_threshold,sizeof(int32_t)*5);
             uart_send((void*)&humidity_threshold,sizeof(int32_t)*5);
             uart_send((void*)&gas_threshold,sizeof(int32_t)*5);
@@ -403,6 +401,7 @@ void UARTIntHandler(void )
             break;
         }
     }
+    UARTIntClear(UART7_BASE, status);
 }
 
 void uart_init(void)
@@ -419,11 +418,11 @@ void uart_init(void)
     GPIOPinConfigure(GPIO_PC4_U7RX);
     GPIOPinConfigure(GPIO_PC5_U7TX);
     GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_4 | GPIO_PIN_5);
-    UARTConfigSetExpClk(UART7_BASE, 12e7, 9600,
+    UARTConfigSetExpClk(UART7_BASE, g_ui32SysClock, 115200,
                            (UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
                             UART_CONFIG_PAR_NONE));
-    IntEnable(INT_UART7);
-    UARTIntEnable(UART7_BASE,UART_INT_RX | UART_INT_RT);
+    //IntEnable(INT_UART7);
+    //UARTIntEnable(UART7_BASE,UART_INT_RX | UART_INT_RT);
     //UARTClockSourceSet(UART7_BASE, UART_CLOCK_PIOSC);
 }
 
@@ -435,7 +434,7 @@ void UARTFxn(void* ptr)
     send_data.time_now=xTaskGetTickCount();
     while(condition)
     {
-        command=UARTCharGet(UART0_BASE);
+        command=UARTCharGet(UART7_BASE);
         data_log.log_id=LOG_COMMAND;
         data_log.data=command;
         queue_adder(&data_log);
@@ -472,9 +471,9 @@ void UARTFxn(void* ptr)
 
             case GET_THRESHOLD:
             {
-                UARTprintf("The temperature threshold is %d", temperature_threshold);
-                UARTprintf("The humidity threshold is %d", humidity_threshold);
-                UARTprintf("The gas threshold is %d", gas_threshold);
+                //uartprintf("The temperature threshold is %d", temperature_threshold);
+                //uartprintf("The humidity threshold is %d", humidity_threshold);
+                //uartprintf("The gas threshold is %d", gas_threshold);
                 uart_send((void*)&temperature_threshold,sizeof(int32_t)*5);
                 uart_send((void*)&humidity_threshold,sizeof(int32_t)*5);
                 uart_send((void*)&gas_threshold,sizeof(int32_t)*5);
@@ -651,14 +650,14 @@ void loggerFxn(void* ptr)
          else
          {
              xSemaphoreTake(sem_uart,portMAX_DELAY);
-             UARTprintf(msg);
-             //uart_send(msg,strlen(msg));
+             //uartprintf(msg);
+             uart_send(msg,strlen(msg));
              xSemaphoreGive(sem_uart);
              sprintf(msg+timeslice,"LOG_END\n\r");
          }
          xSemaphoreTake(sem_uart,portMAX_DELAY);
-         UARTprintf(msg);
-         //uart_send(msg,strlen(msg));
+         //uartprintf(msg);
+         uart_send(msg,strlen(msg));
          xSemaphoreGive(sem_uart);
     }
     vTaskDelete(NULL);
@@ -766,7 +765,7 @@ void thresholdFxn(void* ptr)
 
 void sensorFxn(void* ptr)
 {
-    uint16_t data_op[2];
+    uint16_t data_op[2],i=0;
     queue_data_t data_send;
     while (condition)
     {
@@ -812,6 +811,11 @@ void sensorFxn(void* ptr)
            sensor_status=1;
            led_status&=0xFD;
        }
+//       if(i++==10)
+//       {
+//           i=0;
+//           xSemaphoreGive(sem_log);
+//       }
        queue_adder(&data_send);
        LEDWrite(0x0F,led_status);
     }
@@ -827,8 +831,8 @@ int main(void)
     // Set up the UART which is connected to the virtual COM port
     condition=1;
     i2c_init();
-    //uart_init();
-    UARTStdioConfig(0, 115200, 12e7);
+    uart_init();
+    UARTStdioConfig(0, 9600, 12e7);
     gpio_init();
     SysTickPeriodSet(12e4);
     SysTickIntEnable();
