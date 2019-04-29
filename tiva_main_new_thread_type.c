@@ -85,7 +85,7 @@ int32_t gas_threshold[5]={20,40,60,80,90};
 volatile uint32_t g_ui32Counter = 0;
 volatile bool sensor_check=1;
 uint8_t* error_msg[]={"The Log Queue is full, Data Lost","Log type not found"};
-uint8_t* mode_msg[]={"Manual","Automatic"};
+uint8_t* mode_msg[]={"Manual\t","Automatic"};
 bool remote_mode = AUTOMATIC_MODE;
 uint8_t* failure_msg[]={"Normal","Degraded","Failure"};
 uint8_t failure_index=0;
@@ -580,7 +580,7 @@ void loggerFxn(void* ptr)
              }
          }
          log_counter--;
-         sprintf(time_str,"time: %d sec %d msec\t%s\t%s\t",received_data.time_now/1000,received_data.time_now%1000,mode_msg[remote_mode],failure_msg[failure_index]);
+         sprintf(time_str,"time: %d sec %d msec\t%s\t%s\t\t",received_data.time_now/1000,received_data.time_now%1000,mode_msg[remote_mode],failure_msg[failure_index]);
          timeslice=strlen(time_str);
          memcpy(msg,time_str,timeslice);
          switch(received_data.log_id)
