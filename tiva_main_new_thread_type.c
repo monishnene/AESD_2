@@ -1,11 +1,10 @@
-/* FreeRTOS 8.2 Tiva Demo
+/* AESD Project 2 Remote node
  *
  * main.c
  *
- * Andy Kobyljanec
+ * Monish Nene & Sanika Dongre
  *
- * This is a simple demonstration project of FreeRTOS 8.2 on the Tiva Launchpad
- * EK-TM4C1294XL.  TivaWare driverlib sourcecode is included.
+ *
  */
 
 #include <errno.h>
@@ -60,8 +59,8 @@
 #define SI7021_SLAVE_ADDRESS (0x40)
 #define TEMP_ADDRESS (0xE3)
 #define HUMIDITY_ADDRESS (0xE5)
-#define HUMIDITY_ERROR 0
-#define TEMPERATURE_ERROR 0
+#define HUMIDITY_ERROR 41
+#define TEMPERATURE_ERROR 4
 #define GAS_ERROR 3
 #define NORMAL 0
 #define DEGRADED 1
@@ -87,7 +86,7 @@ volatile bool sensor_check=1;
 uint8_t* error_msg[]={"The Log Queue is full, Data Lost","Log type not found"};
 uint8_t* mode_msg[]={"Manual\t","Automatic"};
 bool remote_mode = AUTOMATIC_MODE;
-uint8_t* failure_msg[]={"Normal","Degraded","Failure"};
+uint8_t* failure_msg[]={"Normal\t","Degraded","Failure\t"};
 uint8_t failure_index=0;
 bool sensor_status=1;
 bool gas_status=1;
@@ -116,6 +115,8 @@ typedef struct
     logtype_t log_id;
     int32_t data;
     int32_t time_now;
+    uint8_t failure;
+    bool mode;
 }queue_data_t;
 
 typedef enum
@@ -178,6 +179,8 @@ int32_t uart_receive(uint8_t* ptr, uint32_t size)
 void queue_adder(queue_data_t* data_send)
 {
     data_send->time_now =  xTaskGetTickCount();
+    data_send->failure=failure_index;
+    data_send->mode=remote_mode;
     if(log_counter==0)
     {
         xSemaphoreGive(sem_read);
@@ -385,6 +388,7 @@ void UARTIntHandler(void )
 
         case FORCE_CHANGE_FANS:
         {
+            uart_receive((void*)&received_data,sizeof(uart_data_t));
             if(received_data.data<6)
             {
                 remote_mode=MANUAL_MODE;
@@ -580,7 +584,7 @@ void loggerFxn(void* ptr)
              }
          }
          log_counter--;
-         sprintf(time_str,"time: %d sec %d msec\t%s\t%s\t\t",received_data.time_now/1000,received_data.time_now%1000,mode_msg[remote_mode],failure_msg[failure_index]);
+         sprintf(time_str,"time: %d sec %d msec\t%s\t%s\t\t",received_data.time_now/1000,received_data.time_now%1000,mode_msg[received_data.mode],failure_msg[received_data.failure]);
          timeslice=strlen(time_str);
          memcpy(msg,time_str,timeslice);
          switch(received_data.log_id)
@@ -681,7 +685,6 @@ void gasFxn(void* ptr)
        current_gas = 3.027*(pow(2.718,current_gas));
        data_send.data = current_gas;
        data_send.log_id=LOG_GAS;
-       queue_adder(&data_send);
        if(current_gas==GAS_ERROR)
        {
           gas_status=0;
@@ -692,6 +695,7 @@ void gasFxn(void* ptr)
            gas_status=1;
            led_status&=0xFB;
        }
+       queue_adder(&data_send);
        LEDWrite(0x0F,led_status);
     }
     vTaskDelete(NULL);
@@ -713,7 +717,6 @@ void thresholdFxn(void* ptr)
         }
         data_send.data=rand()%5;
         data_send.log_id=LOG_THRESHOLD;
-        queue_adder(&data_send);
         if(gas_status&&sensor_status&&sensor_check)
         {
             failure_index=NORMAL;
@@ -755,6 +758,7 @@ void thresholdFxn(void* ptr)
                led_status&=0xFD;
         }
         sensor_check=0;
+        queue_adder(&data_send);
         LEDWrite(0x0F,led_status);
     }
     vTaskDelete(NULL);
@@ -797,7 +801,6 @@ void sensorFxn(void* ptr)
        current_humidity=(((data_op[0]<<8|data_op[1])*125)/65536)-6;
        data_send.data=current_humidity;
        data_send.log_id=LOG_HUMIDITY;
-       queue_adder(&data_send);
        sensor_check=1;
        if((current_humidity==HUMIDITY_ERROR)&&(current_temperature==TEMPERATURE_ERROR))
        {
@@ -809,6 +812,7 @@ void sensorFxn(void* ptr)
            sensor_status=1;
            led_status&=0xFD;
        }
+       queue_adder(&data_send);
        LEDWrite(0x0F,led_status);
     }
     vTaskDelete(NULL);
