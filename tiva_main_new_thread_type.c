@@ -137,6 +137,31 @@ void exit_handler(void)
     condition=0;
 }
 
+int32_t uart_send(uint8_t* ptr, uint32_t size)
+{
+    int32_t i=0;
+    while(*(ptr+i)!=0)
+    {
+        UARTCharPut(UART7_BASE, *(ptr+i));
+        i++;
+        if(i==size)
+        {
+            break;
+        }
+    }
+    return i;
+}
+
+int32_t uart_receive(uint8_t* ptr, uint32_t size)
+{
+    int32_t i=0;
+    for(i=0;i<size;i++)
+    {
+        *(ptr+i)=UARTCharGet(UART7_BASE);
+    }
+    return i;
+}
+
 void queue_adder(queue_data_t* data_send)
 {
     data_send->time_now =  xTaskGetTickCount();
@@ -215,26 +240,162 @@ void i2c_init()
 
 void UARTIntHandler(void* ptr)
 {
+    uart_data_t send_data, received_data;
+    queue_data_t data_log;
+    uint32_t status = UARTIntStatus(UART7_BASE, true);
+    UARTIntClear(UART7_BASE, status);
+    uint8_t command;
+    send_data.time_now=xTaskGetTickCount();
+    command=UARTCharGet(UART7_BASE);
+    data_log.log_id=LOG_COMMAND;
+    data_log.data=command;
+    queue_adder(&data_log);
+    send_data.command_id=(uart_command_t)command;
+    send_data.time_now=xTaskGetTickCount();
+    switch(command)
+    {
+        case LOG_DATA:
+        {
+            xSemaphoreGive(sem_log);
+            break;
+        }
 
+        case GET_TEMPERATURE:
+        {
+            send_data.data=current_temperature;
+            uart_send((void*)&send_data,sizeof(uart_data_t));
+            break;
+        }
+
+        case GET_HUMIDITY:
+        {
+            send_data.data=current_humidity;
+           uart_send((void*)&send_data,sizeof(uart_data_t));
+            break;
+        }
+
+        case GET_GAS:
+        {
+            send_data.data=current_gas;
+           uart_send((void*)&send_data,sizeof(uart_data_t));
+            break;
+        }
+
+        case GET_THRESHOLD:
+        {
+            UARTprintf("The temperature threshold is %d", temperature_threshold);
+            UARTprintf("The humidity threshold is %d", humidity_threshold);
+            UARTprintf("The gas threshold is %d", gas_threshold);
+            uart_send((void*)&temperature_threshold,sizeof(int32_t)*5);
+            uart_send((void*)&humidity_threshold,sizeof(int32_t)*5);
+            uart_send((void*)&gas_threshold,sizeof(int32_t)*5);
+            break;
+        }
+
+        case GET_FAN:
+        {
+            send_data.data=fans_on;
+            uart_send((void*)&send_data,sizeof(uart_data_t));
+            break;
+        }
+
+        case GET_BUZZER:
+        {
+            send_data.data=buzzer;
+            uart_send((void*)&send_data,sizeof(uart_data_t));
+            break;
+        }
+
+        case CHANGE_MODE:
+        {
+            uart_receive((void*)&received_data,sizeof(uart_data_t));
+            if(received_data.data<2)
+            {
+                remote_mode=received_data.data;
+            }
+            break;
+        }
+
+        case CHANGE_TEMPERATURE_THRESHOLD:
+        {
+            uart_receive((void*)&temperature_threshold,sizeof(int32_t)*5);
+            break;
+        }
+
+        case CHANGE_HUMIDITY_THRESHOLD:
+        {
+            uart_receive((void*)&humidity_threshold,sizeof(int32_t)*5);
+            break;
+        }
+
+        case CHANGE_GAS_THRESHOLD:
+        {
+            uart_receive((void*)&gas_threshold,sizeof(int32_t)*5);
+            break;
+        }
+
+
+        case BUZZER_ON:
+        {
+            remote_mode=MANUAL_MODE;
+            buzzer=1;
+            //buzzer_control();
+            break;
+        }
+
+        case BUZZER_OFF:
+        {
+            remote_mode=MANUAL_MODE;
+            buzzer=0;
+            //buzzer_control();
+            break;
+        }
+
+        case FORCE_CHANGE_FANS:
+        {
+            if(received_data.data<6)
+            {
+                remote_mode=MANUAL_MODE;
+                fans_on=received_data.data;
+                Fan_update(fans_on);
+            }
+            break;
+        }
+
+        case RETRY_BIST:
+        {
+            //bist();
+        }
+
+        default:
+        {
+            break;
+        }
+    }
 }
 
 void uart_init(void)
 {
-//    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
-//    GPIOPinConfigure(GPIO_PA0_U0RX);
-//    GPIOPinConfigure(GPIO_PA1_U0TX);
-//    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
-//    UARTClockSourceSet(UART0_BASE, UART_CLOCK_PIOSC);
-//    GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+    //    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+    //    GPIOPinConfigure(GPIO_PA0_U0RX);
+    //    GPIOPinConfigure(GPIO_PA1_U0TX);
+    //    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
+    //    UARTClockSourceSet(UART0_BASE, UART_CLOCK_PIOSC);
+    //    GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
 
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
     GPIOPinConfigure(GPIO_PC4_U7RX);
     GPIOPinConfigure(GPIO_PC5_U7TX);
     SysCtlPeripheralEnable(SYSCTL_PERIPH_UART7);
-    UARTClockSourceSet(UART7_BASE, UART_CLOCK_PIOSC);
     GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_4 | GPIO_PIN_5);
-
-    UARTStdioConfig(7, 115200, 12e7);
+    UARTConfigSetExpClk(UART7_BASE, 12e7, 115200,
+                           (UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
+                            UART_CONFIG_PAR_NONE));
+    IntEnable(INT_UART7);
+    UARTIntEnable(UART7_BASE,UART_INT_RX | UART_INT_RT);
+    //UARTClockSourceSet(UART0_BASE, UART_CLOCK_PIOSC);
+    UARTClockSourceSet(UART7_BASE, UART_CLOCK_PIOSC);
+    UARTStdioConfig(0, 115200, 12e7);
 }
 
 void UARTFxn(void* ptr)
@@ -262,21 +423,21 @@ void UARTFxn(void* ptr)
             case GET_TEMPERATURE:
             {
                 send_data.data=current_temperature;
-                UARTwrite((void*)&send_data,sizeof(uart_data_t));
+                uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case GET_HUMIDITY:
             {
                 send_data.data=current_humidity;
-                UARTwrite((void*)&send_data,sizeof(uart_data_t));
+                uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case GET_GAS:
             {
                 send_data.data=current_gas;
-                UARTwrite((void*)&send_data,sizeof(uart_data_t));
+                uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
@@ -285,28 +446,29 @@ void UARTFxn(void* ptr)
                 UARTprintf("The temperature threshold is %d", temperature_threshold);
                 UARTprintf("The humidity threshold is %d", humidity_threshold);
                 UARTprintf("The gas threshold is %d", gas_threshold);
-                UARTwrite((void*)&temperature_threshold,sizeof(int32_t)*5);
-                UARTwrite((void*)&humidity_threshold,sizeof(int32_t)*5);
-                UARTwrite((void*)&gas_threshold,sizeof(int32_t)*5);
+                uart_send((void*)&temperature_threshold,sizeof(int32_t)*5);
+                uart_send((void*)&humidity_threshold,sizeof(int32_t)*5);
+                uart_send((void*)&gas_threshold,sizeof(int32_t)*5);
                 break;
             }
 
             case GET_FAN:
             {
                 send_data.data=fans_on;
-                UARTwrite((void*)&send_data,sizeof(uart_data_t));
+                uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case GET_BUZZER:
             {
                 send_data.data=buzzer;
-                UARTwrite((void*)&send_data,sizeof(uart_data_t));
+                uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case CHANGE_MODE:
             {
+                uart_receive((void*)&received_data,sizeof(uart_data_t));
                 if(received_data.data<2)
                 {
                     remote_mode=received_data.data;
@@ -316,19 +478,19 @@ void UARTFxn(void* ptr)
 
             case CHANGE_TEMPERATURE_THRESHOLD:
             {
-                //UART_read(uart, &temperature_threshold, sizeof(temperature_threshold));
+                uart_receive((void*)&temperature_threshold,sizeof(int32_t)*5);
                 break;
             }
 
             case CHANGE_HUMIDITY_THRESHOLD:
             {
-                //UARTprintf(uart, &humidity_threshold, sizeof(temperature_threshold));
+                uart_receive((void*)&humidity_threshold,sizeof(int32_t)*5);
                 break;
             }
 
             case CHANGE_GAS_THRESHOLD:
             {
-                //UARTprintf(uart, &gas_threshold, sizeof(temperature_threshold));
+                uart_receive((void*)&gas_threshold,sizeof(int32_t)*5);
                 break;
             }
 
@@ -461,11 +623,13 @@ void loggerFxn(void* ptr)
          {
              xSemaphoreTake(sem_uart,portMAX_DELAY);
              UARTprintf(msg);
+             uart_send(msg,strlen(msg));
              xSemaphoreGive(sem_uart);
              sprintf(msg+timeslice,"LOG_END\n\r");
          }
          xSemaphoreTake(sem_uart,portMAX_DELAY);
          UARTprintf(msg);
+         uart_send(msg,strlen(msg));
          xSemaphoreGive(sem_uart);
     }
     vTaskDelete(NULL);
@@ -572,9 +736,9 @@ int main(void)
     g_ui32SysClock = MAP_SysCtlClockFreqSet(( SYSCTL_XTAL_25MHZ | SYSCTL_OSC_MAIN | SYSCTL_USE_PLL | SYSCTL_CFG_VCO_480), 12e7);
     g_ui32Counter = 0;
     // Set up the UART which is connected to the virtual COM port
-    UARTStdioConfig(7, 115200, 12e7);
     condition=1;
     i2c_init();
+    uart_init();
     SysTickPeriodSet(12e4);
     SysTickIntEnable();
     SysTickEnable();
@@ -591,7 +755,8 @@ int main(void)
     xTaskCreate(thresholdFxn, (const portCHAR *)"threshold", TASKSTACKSIZE, NULL, 1, NULL);
     xTaskCreate(loggerFxn, (const portCHAR *)"logger", TASKSTACKSIZE, NULL, 1, NULL);
     xTaskCreate(gasFxn, (const portCHAR *)"gas", TASKSTACKSIZE, NULL, 1, NULL);
-    xTaskCreate(UARTFxn, (const portCHAR *)"uart", TASKSTACKSIZE, NULL, 1, NULL);
+    //xTaskCreate(UARTFxn, (const portCHAR *)"uart", TASKSTACKSIZE, NULL, 1, NULL);
+    IntMasterEnable();
     vTaskStartScheduler();
     return 0;
 }
