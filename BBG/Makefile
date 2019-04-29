@@ -8,6 +8,8 @@
 
 	common_objects =
 
+	ip=10.0.0.152
+
 	CC=gcc
 	flags =	$(common_flags)
 	sources = $(common_sources)
@@ -62,6 +64,4 @@ clean :
 	rm	-f	*.o	*.s	*.i	*.o	*.d	*.elf *.swp
 
 upload:
-	make	clean
-	sudo	make	PLATFORM=BBG
-	sudo	scp	project.elf	led_init.sh	root@$(ip):/
+	sudo	scp	control_node.c	root@$(ip):/

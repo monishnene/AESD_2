@@ -43,7 +43,6 @@
 #ifndef DEBUG
 #define printf(fmt, ...) (0)
 #endif
-#define UART0 "/dev/ttyO0"
 #define BAUDRATE B38400    
 #define UART4 "/dev/ttyO4"	 
 #define _POSIX_SOURCE 1 /* POSIX compliant source */
@@ -71,8 +70,8 @@ static uint8_t logger_ready_id[]="check if logger is ready";
 static uint8_t logfile_sem_id[]="sem_logfile";
 static uint8_t uart_id[]="uart communication";
 pthread_t thread_logger;
-int fd_uart0,fd_uart4,c, res;
-struct termios oldtio0,oldtio4,newtio0,newtio4;
+int fd_uart4,c, res;
+struct termios oldtio4,newtio4;
 char buffer_in[255];
 char buffer_out[]="\nHello World!\nUart is working ;-)\n";
 
@@ -269,73 +268,75 @@ void system_end(int sig)
 
 void uart_init(void)
 {
-	fd_uart4 = open(UART4, O_RDWR | O_NOCTTY ); 
- 	if (fd_uart4 <0)
-	{
-		printf("uart4 not found\n");
-	}
-	else
-	{
-		printf("uart4 found\n");
-	}
-	tcgetattr(fd_uart4,&oldtio4); /* save current serial port settings */
-	/* 
-	  BAUDRATE: Set bps rate. You could also use cfsetispeed and cfsetospeed.
-	  CRTSCTS : output hardware flow control (only used if the cable has
-		    all necessary lines. See sect. 7 of Serial-HOWTO)
-	  CS8     : 8n1 (8bit,no parity,1 stopbit)
-	  CLOCAL  : local connection, no modem contol
-	  CREAD   : enable receiving characters
-	*/
-	 newtio4.c_cflag = BAUDRATE | CRTSCTS | CS8 | CLOCAL | CREAD;
-	/*
-	  IGNPAR  : ignore bytes with parity errors
-	  ICRNL   : map CR to NL (otherwise a CR input on the other computer
-		    will not terminate input)
-	  otherwise make device raw (no other input processing)
-	*/
-	 newtio4.c_iflag = IGNPAR | ICRNL; 
-	/*
-	 Raw output.
-	*/
-	 newtio4.c_oflag = 0;
-	 
-	/*
-	  ICANON  : enable canonical input
-	  disable all echo functionality, and don't send signals to calling program
-	*/
-	 newtio4.c_lflag = ICANON;
-	 
-	/* 
-	  initialize all control characters 
-	  default values can be found in /usr/include/termios.h, and are given
-	  in the comments, but we don't need them here
-	*/
-	 newtio4.c_cc[VINTR]    = 0;     /* Ctrl-c */ 
-	 newtio4.c_cc[VQUIT]    = 0;     /* Ctrl-\ */
-	 newtio4.c_cc[VERASE]   = 0;     /* del */
-	 newtio4.c_cc[VKILL]    = 0;     /* @ */
-	 newtio4.c_cc[VEOF]     = 4;     /* Ctrl-d */
-	 newtio4.c_cc[VTIME]    = 0;     /* inter-character timer unused */
-	 newtio4.c_cc[VMIN]     = 1;     /* blocking read until 1 character arrives */
-	 newtio4.c_cc[VSWTC]    = 0;     /* '\0' */
-	 newtio4.c_cc[VSTART]   = 0;     /* Ctrl-q */ 
-	 newtio4.c_cc[VSTOP]    = 0;     /* Ctrl-s */
-	 newtio4.c_cc[VSUSP]    = 0;     /* Ctrl-z */
-	 newtio4.c_cc[VEOL]     = 0;     /* '\0' */
-	 newtio4.c_cc[VREPRINT] = 0;     /* Ctrl-r */
-	 newtio4.c_cc[VDISCARD] = 0;     /* Ctrl-u */
-	 newtio4.c_cc[VWERASE]  = 0;     /* Ctrl-w */
-	 newtio4.c_cc[VLNEXT]   = 0;     /* Ctrl-v */
-	 newtio4.c_cc[VEOL2]    = 0;     /* '\0' */
 
-	/* 
-	  now clean the modem line and activate the settings for the port
-	*/
-	 //tcflush(fd_uart0, TCIFLUSH);
-	 //tcsetattr(fd_uart0,TCSANOW,&newtio0);
-	 tcflush(fd_uart4, TCIFLUSH);
-	 tcsetattr(fd_uart4,TCSANOW,&newtio4);
+ fd_uart4 = open(UART4, O_RDWR | O_NOCTTY ); 
+ if (fd_uart4 <0)
+{
+printf("uart4 not found\n");
+}
+else
+{
+printf("uart4 found\n");
+}
+
+ tcgetattr(fd_uart4,&oldtio4); /* save current serial port settings */
+
+/* 
+  BAUDRATE: Set bps rate. You could also use cfsetispeed and cfsetospeed.
+  CRTSCTS : output hardware flow control (only used if the cable has
+            all necessary lines. See sect. 7 of Serial-HOWTO)
+  CS8     : 8n1 (8bit,no parity,1 stopbit)
+  CLOCAL  : local connection, no modem contol
+  CREAD   : enable receiving characters
+*/
+ newtio4.c_cflag = BAUDRATE | CRTSCTS | CS8 | CLOCAL | CREAD;
+/*
+  IGNPAR  : ignore bytes with parity errors
+  ICRNL   : map CR to NL (otherwise a CR input on the other computer
+            will not terminate input)
+  otherwise make device raw (no other input processing)
+*/
+ newtio4.c_iflag = IGNPAR | ICRNL;
+ 
+/*
+ Raw output.
+*/
+ newtio4.c_oflag = 0;
+ 
+/*
+  ICANON  : enable canonical input
+  disable all echo functionality, and don't send signals to calling program
+*/
+ newtio4.c_lflag = ICANON;
+ 
+/* 
+  initialize all control characters 
+  default values can be found in /usr/include/termios.h, and are given
+  in the comments, but we don't need them here
+*/
+ newtio4.c_cc[VINTR]    = 0;     /* Ctrl-c */ 
+ newtio4.c_cc[VQUIT]    = 0;     /* Ctrl-\ */
+ newtio4.c_cc[VERASE]   = 0;     /* del */
+ newtio4.c_cc[VKILL]    = 0;     /* @ */
+ newtio4.c_cc[VEOF]     = 4;     /* Ctrl-d */
+ newtio4.c_cc[VTIME]    = 0;     /* inter-character timer unused */
+ newtio4.c_cc[VMIN]     = 1;     /* blocking read until 1 character arrives */
+ newtio4.c_cc[VSWTC]    = 0;     /* '\0' */
+ newtio4.c_cc[VSTART]   = 0;     /* Ctrl-q */ 
+ newtio4.c_cc[VSTOP]    = 0;     /* Ctrl-s */
+ newtio4.c_cc[VSUSP]    = 0;     /* Ctrl-z */
+ newtio4.c_cc[VEOL]     = 0;     /* '\0' */
+ newtio4.c_cc[VREPRINT] = 0;     /* Ctrl-r */
+ newtio4.c_cc[VDISCARD] = 0;     /* Ctrl-u */
+ newtio4.c_cc[VWERASE]  = 0;     /* Ctrl-w */
+ newtio4.c_cc[VLNEXT]   = 0;     /* Ctrl-v */
+ newtio4.c_cc[VEOL2]    = 0;     /* '\0' */
+
+/* 
+  now clean the modem line and activate the settings for the port
+*/
+ tcflush(fd_uart4, TCIFLUSH);
+ tcsetattr(fd_uart4,TCSANOW,&newtio4);
 }
 
 /*int uart_write(char data_write[])
@@ -355,7 +356,7 @@ char uart_read(void)
 
 int32_t main(int32_t argc, uint8_t **argv)
 {
-	uint8_t input=0;
+	uint8_t input=0,echo=0;
 	int32_t error=0;
 	uint32_t counter=0;	
 	pid_t process_id = getpid();	
@@ -364,7 +365,10 @@ int32_t main(int32_t argc, uint8_t **argv)
 		printf("%s <logfilename>\n",argv[0]);	 //log file name as command line argument
 		return 0;
 	}	
-	condition=1;
+	condition=1;	
+	sem_unlink(uart_id);
+	sem_unlink(logfile_sem_id);
+	sem_unlink(logger_ready_id);
 	sem_logger=sem_open(logger_ready_id, O_CREAT, 0644,0);	
 	sem_logfile=sem_open(logfile_sem_id, O_CREAT, 0644,1);	
 	sem_uart=sem_open(uart_id, O_CREAT, 0644,1);
@@ -374,7 +378,8 @@ int32_t main(int32_t argc, uint8_t **argv)
 	//Signal Handling
 	//signal(SIGUSR1,kill_logger);
 	//signal(SIGUSR2,kill_server);
-	timer_init();		
+	timer_init();
+	uart_init();
 	//pthread join
 	if(!fork())
 	{
@@ -412,6 +417,8 @@ int32_t main(int32_t argc, uint8_t **argv)
 		scanf("%c",&input);
 		sem_wait(sem_uart);		
 		write(fd_uart4,(void*)&input,1);
+		read(fd_uart4,(void*)&echo,1);
+		printf("Command Sent to TIVA: %c",echo);
 		send_data.data=0;
 		send_data.time_now=0;
 		send_data.command_id = input;
