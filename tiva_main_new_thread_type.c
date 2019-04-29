@@ -60,6 +60,12 @@
 #define SI7021_SLAVE_ADDRESS (0x40)
 #define TEMP_ADDRESS (0xE3)
 #define HUMIDITY_ADDRESS (0xE5)
+#define HUMIDITY_ERROR 0
+#define TEMPERATURE_ERROR 0
+#define GAS_ERROR 3
+#define NORMAL 0
+#define DEGRADED 1
+#define FAILURE 2
 
 QueueHandle_t log_queue;
 SemaphoreHandle_t sem_log,sem_read,sem_uart,sem_uart_comm;
@@ -69,7 +75,7 @@ uint8_t* logfile;
 uint8_t msg[STR_SIZE];
 uint8_t fans_on=0;
 bool buzzer=0;
-bool remote_mode = AUTOMATIC_MODE;
+uint8_t led_status=0;
 int32_t current_temperature,current_gas,condition;
 double current_humidity;
 bool fans[5]={0,0,0,0,0};
@@ -77,7 +83,14 @@ int32_t temperature_threshold[5]={20,25,30,35,50};
 int32_t humidity_threshold[5]={20,40,60,80,90};
 int32_t gas_threshold[5]={20,40,60,80,90};
 volatile uint32_t g_ui32Counter = 0;
+volatile bool sensor_check=1;
 uint8_t* error_msg[]={"The Log Queue is full, Data Lost","Log type not found"};
+uint8_t* mode_msg[]={"Manual","Automatic"};
+bool remote_mode = AUTOMATIC_MODE;
+uint8_t* failure_msg[]={"Normal","Degraded","Failure"};
+uint8_t failure_index=0;
+bool sensor_status=1;
+bool gas_status=1;
 uint32_t g_ui32SysClock;
 
 typedef enum
@@ -171,7 +184,8 @@ void queue_adder(queue_data_t* data_send)
     }
     if(log_counter < QUEUE_SIZE-1)
     {
-        LEDWrite(0x0F, 0x00);
+        led_status&=0xFE;
+        LEDWrite(0x0F,led_status);
         xQueueSend(log_queue,( void * )data_send,(TickType_t)10);
         log_counter++;
     }
@@ -179,7 +193,8 @@ void queue_adder(queue_data_t* data_send)
     {
         data_send->data=0;
         data_send->log_id=LOG_ERROR;
-        LEDWrite(0x0F, 0x00);
+        led_status|=0x01;
+        LEDWrite(0x0F,led_status);
         xQueueSend(log_queue,( void * )data_send,(TickType_t)10);
         log_counter++;
     }
@@ -209,22 +224,22 @@ void Fan_update(int8_t value)
     {
         fans[i]=i<=value?1:0;
     }
-    if(fans[4])
+    buzzer=fans[4];
+    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_0, fans[0]);
+    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_1, fans[1]);
+    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_2, fans[2]);
+    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_3, fans[3]);
+    if(remote_mode)
     {
-        buzzer=1;
-        buzzer_control();
-    }
-    else
-    {
-        buzzer=0;
-        buzzer_control();
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
     }
     data_send.data=value;
     data_send.log_id=LOG_FAN;
     queue_adder(&data_send);
 }
 
-void i2c_init()
+void i2c_init(void)
 {
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
     GPIOPinConfigure(GPIO_PB2_I2C0SCL);
@@ -236,9 +251,21 @@ void i2c_init()
     SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C0);
     while(!SysCtlPeripheralReady(SYSCTL_PERIPH_I2C0));
     I2CMasterInitExpClk(I2C0_BASE, g_ui32SysClock, false);
- }
+}
 
-void UARTIntHandler(void* ptr)
+void gpio_init(void)
+{
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOL);
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOL));
+    GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_0);
+    GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_1);
+    GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_2);
+    GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_3);
+    GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_4);
+    GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_5);
+}
+
+void UARTIntHandler(void )
 {
     uart_data_t send_data, received_data;
     queue_data_t data_log;
@@ -308,10 +335,13 @@ void UARTIntHandler(void* ptr)
 
         case CHANGE_MODE:
         {
-            uart_receive((void*)&received_data,sizeof(uart_data_t));
-            if(received_data.data<2)
+            if(remote_mode)
             {
-                remote_mode=received_data.data;
+               remote_mode=MANUAL_MODE;
+            }
+            else
+            {
+               remote_mode=AUTOMATIC_MODE;
             }
             break;
         }
@@ -338,16 +368,18 @@ void UARTIntHandler(void* ptr)
         case BUZZER_ON:
         {
             remote_mode=MANUAL_MODE;
-            buzzer=1;
-            //buzzer_control();
+            buzzer=0;
+            GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
+            GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
             break;
         }
 
         case BUZZER_OFF:
         {
             remote_mode=MANUAL_MODE;
-            buzzer=0;
-            //buzzer_control();
+            buzzer=1;
+            GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
+            GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
             break;
         }
 
@@ -360,11 +392,6 @@ void UARTIntHandler(void* ptr)
                 Fan_update(fans_on);
             }
             break;
-        }
-
-        case RETRY_BIST:
-        {
-            //bist();
         }
 
         default:
@@ -384,18 +411,16 @@ void uart_init(void)
     //    GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
 
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART7);
     GPIOPinConfigure(GPIO_PC4_U7RX);
     GPIOPinConfigure(GPIO_PC5_U7TX);
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART7);
     GPIOPinTypeUART(GPIO_PORTC_BASE, GPIO_PIN_4 | GPIO_PIN_5);
-    UARTConfigSetExpClk(UART7_BASE, 12e7, 115200,
+    UARTConfigSetExpClk(UART7_BASE, 12e7, 9600,
                            (UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
                             UART_CONFIG_PAR_NONE));
     IntEnable(INT_UART7);
     UARTIntEnable(UART7_BASE,UART_INT_RX | UART_INT_RT);
-    //UARTClockSourceSet(UART0_BASE, UART_CLOCK_PIOSC);
-    UARTClockSourceSet(UART7_BASE, UART_CLOCK_PIOSC);
-    UARTStdioConfig(0, 115200, 12e7);
+    //UARTClockSourceSet(UART7_BASE, UART_CLOCK_PIOSC);
 }
 
 void UARTFxn(void* ptr)
@@ -468,10 +493,13 @@ void UARTFxn(void* ptr)
 
             case CHANGE_MODE:
             {
-                uart_receive((void*)&received_data,sizeof(uart_data_t));
-                if(received_data.data<2)
+                if(remote_mode)
                 {
-                    remote_mode=received_data.data;
+                   remote_mode=MANUAL_MODE;
+                }
+                else
+                {
+                   remote_mode=AUTOMATIC_MODE;
                 }
                 break;
             }
@@ -497,16 +525,18 @@ void UARTFxn(void* ptr)
             case BUZZER_ON:
             {
                 remote_mode=MANUAL_MODE;
-                buzzer=1;
-                //buzzer_control();
+                buzzer=0;
+                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
+                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
                 break;
             }
 
             case BUZZER_OFF:
             {
                 remote_mode=MANUAL_MODE;
-                buzzer=0;
-                //buzzer_control();
+                buzzer=1;
+                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
+                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
                 break;
             }
 
@@ -521,11 +551,6 @@ void UARTFxn(void* ptr)
                 break;
             }
 
-            case RETRY_BIST:
-            {
-                //bist();
-            }
-
             default:
             {
                 break;
@@ -537,7 +562,7 @@ void UARTFxn(void* ptr)
 
 void loggerFxn(void* ptr)
 {
-    uint8_t time_str[30];
+    uint8_t time_str[50];
     uint8_t timeslice;
     queue_data_t received_data;
     while (condition)
@@ -555,7 +580,7 @@ void loggerFxn(void* ptr)
              }
          }
          log_counter--;
-         sprintf(time_str,"time: %d sec %d msec\t",received_data.time_now/1000,received_data.time_now%1000);
+         sprintf(time_str,"time: %d sec %d msec\t%s\t%s\t",received_data.time_now/1000,received_data.time_now%1000,mode_msg[remote_mode],failure_msg[failure_index]);
          timeslice=strlen(time_str);
          memcpy(msg,time_str,timeslice);
          switch(received_data.log_id)
@@ -580,7 +605,7 @@ void loggerFxn(void* ptr)
 
             case LOG_HUMIDITY:
             {
-                sprintf(msg+timeslice,"LOG_HUMIDITY\tHumidity: %d%%\n\r",received_data.data);
+                sprintf(msg+timeslice,"LOG_HUMIDITY\tHumidity: %d\n\r",received_data.data);
                 break;
             }
 
@@ -623,13 +648,13 @@ void loggerFxn(void* ptr)
          {
              xSemaphoreTake(sem_uart,portMAX_DELAY);
              UARTprintf(msg);
-             uart_send(msg,strlen(msg));
+             //uart_send(msg,strlen(msg));
              xSemaphoreGive(sem_uart);
              sprintf(msg+timeslice,"LOG_END\n\r");
          }
          xSemaphoreTake(sem_uart,portMAX_DELAY);
          UARTprintf(msg);
-         uart_send(msg,strlen(msg));
+         //uart_send(msg,strlen(msg));
          xSemaphoreGive(sem_uart);
     }
     vTaskDelete(NULL);
@@ -638,15 +663,15 @@ void loggerFxn(void* ptr)
 void gasFxn(void* ptr)
 {
     queue_data_t data_send;
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC1);
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_ADC1));
+    GPIOPinTypeADC(GPIO_PORTE_BASE,GPIO_PIN_2);
+    ADCSequenceConfigure(ADC1_BASE,3,ADC_TRIGGER_PROCESSOR,0);
+    ADCSequenceStepConfigure(ADC1_BASE,3,0,ADC_CTL_CH1|ADC_CTL_IE|ADC_CTL_END);
+    ADCSequenceEnable(ADC1_BASE,3);
     while (condition)
     {
        vTaskDelay(GAS_PERIOD);
-       SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC1);
-       while(!SysCtlPeripheralReady(SYSCTL_PERIPH_ADC1));
-       GPIOPinTypeADC(GPIO_PORTE_BASE,GPIO_PIN_2);
-       ADCSequenceConfigure(ADC1_BASE,3,ADC_TRIGGER_PROCESSOR,0);
-       ADCSequenceStepConfigure(ADC1_BASE,3,0,ADC_CTL_CH1|ADC_CTL_IE|ADC_CTL_END);
-       ADCSequenceEnable(ADC1_BASE,3);
        ADCProcessorTrigger(ADC1_BASE,3);
        while(!ADCIntStatus(ADC1_BASE,3,false));
        ADCIntClear(ADC1_BASE,3);
@@ -657,6 +682,17 @@ void gasFxn(void* ptr)
        data_send.data = current_gas;
        data_send.log_id=LOG_GAS;
        queue_adder(&data_send);
+       if(current_gas==GAS_ERROR)
+       {
+          gas_status=0;
+          led_status^=0x04;
+       }
+       else
+       {
+           gas_status=1;
+           led_status&=0xFB;
+       }
+       LEDWrite(0x0F,led_status);
     }
     vTaskDelete(NULL);
 }
@@ -675,14 +711,51 @@ void thresholdFxn(void* ptr)
                 break;
             }
         }
-        if((i!=fans_on)&&remote_mode)
-        {
-            fans_on=i;
-            Fan_update(fans_on);
-        }
         data_send.data=rand()%5;
         data_send.log_id=LOG_THRESHOLD;
         queue_adder(&data_send);
+        if(gas_status&&sensor_status&&sensor_check)
+        {
+            failure_index=NORMAL;
+            if((i!=fans_on)&&remote_mode)
+            {
+                fans_on=i;
+                Fan_update(fans_on);
+            }
+            led_status&=0xF7;
+        }
+        else if(gas_status||(sensor_status&&sensor_check))
+        {
+            failure_index=DEGRADED;
+            if(fans_on<2)
+            {
+                fans_on=2;
+                Fan_update(fans_on);
+            }
+            led_status^=0x08;
+        }
+        else
+        {
+            failure_index=FAILURE;
+            if(fans_on<5)
+            {
+                fans_on=5;
+                Fan_update(fans_on);
+            }
+            led_status|=0x08;
+        }
+        if(!sensor_check)
+        {
+               sensor_status=0;
+               led_status^=0x02;
+        }
+        else
+        {
+               sensor_status=1;
+               led_status&=0xFD;
+        }
+        sensor_check=0;
+        LEDWrite(0x0F,led_status);
     }
     vTaskDelete(NULL);
 }
@@ -725,6 +798,18 @@ void sensorFxn(void* ptr)
        data_send.data=current_humidity;
        data_send.log_id=LOG_HUMIDITY;
        queue_adder(&data_send);
+       sensor_check=1;
+       if((current_humidity==HUMIDITY_ERROR)&&(current_temperature==TEMPERATURE_ERROR))
+       {
+           sensor_status=0;
+           led_status^=0x02;
+       }
+       else
+       {
+           sensor_status=1;
+           led_status&=0xFD;
+       }
+       LEDWrite(0x0F,led_status);
     }
     vTaskDelete(NULL);
 }
@@ -738,7 +823,9 @@ int main(void)
     // Set up the UART which is connected to the virtual COM port
     condition=1;
     i2c_init();
-    uart_init();
+    //uart_init();
+    UARTStdioConfig(0, 115200, 12e7);
+    gpio_init();
     SysTickPeriodSet(12e4);
     SysTickIntEnable();
     SysTickEnable();
@@ -755,8 +842,8 @@ int main(void)
     xTaskCreate(thresholdFxn, (const portCHAR *)"threshold", TASKSTACKSIZE, NULL, 1, NULL);
     xTaskCreate(loggerFxn, (const portCHAR *)"logger", TASKSTACKSIZE, NULL, 1, NULL);
     xTaskCreate(gasFxn, (const portCHAR *)"gas", TASKSTACKSIZE, NULL, 1, NULL);
-    //xTaskCreate(UARTFxn, (const portCHAR *)"uart", TASKSTACKSIZE, NULL, 1, NULL);
-    IntMasterEnable();
+    xTaskCreate(UARTFxn, (const portCHAR *)"uart", TASKSTACKSIZE, NULL, 1, NULL);
+    //IntMasterEnable();
     vTaskStartScheduler();
     return 0;
 }
