@@ -216,12 +216,48 @@ void Fan_update(int8_t value)
         fans[i]=i<=value?1:0;
     }
     buzzer=fans[4];
-    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_0, fans[0]);
-    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_1, fans[1]);
-    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_2, fans[2]);
-    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_3, fans[3]);
-    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
-    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
+    if(fans[0])
+    {
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_0, GPIO_PIN_0);
+    }
+    else
+    {
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_0, 0);
+    }
+    if(fans[1])
+    {
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_1, GPIO_PIN_1);
+    }
+    else
+    {
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_1, 0);
+    }
+    if(fans[2])
+    {
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_2, GPIO_PIN_2);
+    }
+    else
+    {
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_2, 0);
+    }
+    if(fans[3])
+    {
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_3, GPIO_PIN_3);
+    }
+    else
+    {
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_3, 0);
+    }
+    if(!buzzer)
+    {
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4, GPIO_PIN_4);
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5, GPIO_PIN_5);
+    }
+    else
+    {
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,0);
+        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,0);
+    }
     data_send.data=value;
     data_send.log_id=LOG_FAN;
     queue_adder(&data_send);
@@ -244,7 +280,7 @@ void i2c_init(void)
 void gpio_init(void)
 {
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOL);
-    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOL));
+    //while(!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOL));
     GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_0);
     GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_1);
     GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_2);
@@ -369,8 +405,8 @@ void UARTFxn(void* ptr)
             {
                 remote_mode=MANUAL_MODE;
                 buzzer=0;
-                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
-                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
+                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,0);
+                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,0);
                 break;
             }
 
@@ -378,8 +414,8 @@ void UARTFxn(void* ptr)
             {
                 remote_mode=MANUAL_MODE;
                 buzzer=1;
-                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
-                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
+                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,GPIO_PIN_4);
+                GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,GPIO_PIN_5);
                 break;
             }
 
@@ -691,7 +727,7 @@ int main(void)
     log_queue=xQueueCreate(QUEUE_SIZE,sizeof(queue_data_t));
     sem_read = xSemaphoreCreateBinary();
     sem_log = xSemaphoreCreateBinary();
-    sem_uart = xSemaphoreCreateBinary();A
+    sem_uart = xSemaphoreCreateBinary();
     sem_uart_comm = xSemaphoreCreateBinary();
     xSemaphoreGive(sem_uart);
     // Initialize the GPIO pins for the Launchpad
