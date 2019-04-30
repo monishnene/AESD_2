@@ -75,8 +75,7 @@ uint8_t msg[STR_SIZE];
 uint8_t fans_on=0;
 bool buzzer=0;
 uint8_t led_status=0;
-int32_t current_temperature,current_gas,condition;
-double current_humidity;
+int32_t current_temperature,current_gas,condition,current_humidity;
 bool fans[5]={0,0,0,0,0};
 int32_t temperature_threshold[5]={20,25,30,35,50};
 int32_t humidity_threshold[5]={20,40,60,80,90};
@@ -135,7 +134,8 @@ typedef enum
     BUZZER_OFF='L',
     FORCE_CHANGE_FANS='M',
     GET_BUZZER='N',
-    RETRY_BIST='O',
+    GET_FAILURE='O',
+    GET_MODE='P',
 }uart_command_t;
 
 typedef struct
@@ -207,18 +207,6 @@ void queue_adder(queue_data_t* data_send)
     }
 }
 
-void buzzer_control(void)
-{
-    if(buzzer)
-    {
-        //buzzer on
-    }
-    else
-    {
-        //buzzer off
-    }
-}
-
 void Fan_update(int8_t value)
 {
     queue_data_t data_send;
@@ -232,11 +220,8 @@ void Fan_update(int8_t value)
     GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_1, fans[1]);
     GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_2, fans[2]);
     GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_3, fans[3]);
-    if(remote_mode)
-    {
-        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
-        GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
-    }
+    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
+    GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
     data_send.data=value;
     data_send.log_id=LOG_FAN;
     queue_adder(&data_send);
@@ -396,6 +381,20 @@ void UARTIntHandler(void )
             break;
         }
 
+        case GET_FAILURE:
+        {
+            send_data.data=failure_index;
+            uart_send((void*)&send_data,sizeof(uart_data_t));
+            break;
+        }
+
+        case GET_MODE:
+        {
+            send_data.data=remote_mode;
+            uart_send((void*)&send_data,sizeof(uart_data_t));
+            break;
+        }
+
         default:
         {
             break;
@@ -458,14 +457,14 @@ void UARTFxn(void* ptr)
             case GET_HUMIDITY:
             {
                 send_data.data=current_humidity;
-                uart_send((void*)&send_data,sizeof(uart_data_t));
+               uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
             case GET_GAS:
             {
                 send_data.data=current_gas;
-                uart_send((void*)&send_data,sizeof(uart_data_t));
+               uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
@@ -525,6 +524,7 @@ void UARTFxn(void* ptr)
                 break;
             }
 
+
             case BUZZER_ON:
             {
                 remote_mode=MANUAL_MODE;
@@ -545,6 +545,7 @@ void UARTFxn(void* ptr)
 
             case FORCE_CHANGE_FANS:
             {
+                uart_receive((void*)&received_data,sizeof(uart_data_t));
                 if(received_data.data<6)
                 {
                     remote_mode=MANUAL_MODE;
@@ -553,6 +554,21 @@ void UARTFxn(void* ptr)
                 }
                 break;
             }
+
+            case GET_FAILURE:
+            {
+                send_data.data=failure_index;
+                uart_send((void*)&send_data,sizeof(uart_data_t));
+                break;
+            }
+
+            case GET_MODE:
+            {
+                send_data.data=remote_mode;
+                uart_send((void*)&send_data,sizeof(uart_data_t));
+                break;
+            }
+
 
             default:
             {
@@ -653,7 +669,7 @@ void loggerFxn(void* ptr)
              //uartprintf(msg);
              uart_send(msg,strlen(msg));
              xSemaphoreGive(sem_uart);
-             sprintf(msg+timeslice,"LOG_END\n\r");
+             sprintf(msg+timeslice,"LOG_END.\n\r");
          }
          xSemaphoreTake(sem_uart,portMAX_DELAY);
          //uartprintf(msg);
@@ -729,7 +745,7 @@ void thresholdFxn(void* ptr)
         else if(gas_status||(sensor_status&&sensor_check))
         {
             failure_index=DEGRADED;
-            if(fans_on<2)
+            if((fans_on<2)&&remote_mode)
             {
                 fans_on=2;
                 Fan_update(fans_on);
@@ -739,7 +755,7 @@ void thresholdFxn(void* ptr)
         else
         {
             failure_index=FAILURE;
-            if(fans_on<5)
+            if((fans_on<5)&&remote_mode)
             {
                 fans_on=5;
                 Fan_update(fans_on);
