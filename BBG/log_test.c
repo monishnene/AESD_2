@@ -50,7 +50,22 @@
 #define TRUE 1
 #define STR_SIZE 200
 #define logger_port 8000
-
+#define STR_SIZE 200
+#define LOGGER_PERIOD 20
+#define THRESHOLD_PERIOD 1000
+#define LED_PERIOD  1000
+#define SENSOR_PERIOD 1000
+#define GAS_PERIOD 1000
+#define HUMIDITY_PERIOD 1000
+#define TEMP_SLAVE_ADDR (0x48)
+#define TEMP_REG_ADDR   (0x00)
+#define UART_PERIOD 1
+#define QUEUE_SIZE 100
+#define AUTOMATIC_MODE 1
+#define MANUAL_MODE 0
+#define SI7021_SLAVE_ADDRESS (0x40)
+#define TEMP_ADDRESS (0xE3)
+#define HUMIDITY_ADDRESS (0xE5)
 /*****************************
 * Global variables
 * shared mem and semaphores
@@ -74,26 +89,9 @@ int fd_uart4,c, res;
 struct termios term_uart;
 char buffer_in[255];
 char buffer_out[]="\nHello World!\nUart is working ;-)\n";
-
+uint8_t* mode_msg[]={"Manual\t","Automatic"};
+uint8_t* failure_msg[]={"Normal\t","Degraded","Failure\t"};
 volatile int STOP=FALSE; 
-
-#define STR_SIZE 200
-#define LOGGER_PERIOD 20
-#define THRESHOLD_PERIOD 1000
-#define LED_PERIOD  1000
-#define SENSOR_PERIOD 1000
-#define GAS_PERIOD 1000
-#define HUMIDITY_PERIOD 1000
-#define TEMP_SLAVE_ADDR (0x48)
-#define TEMP_REG_ADDR   (0x00)
-#define UART_PERIOD 1
-#define QUEUE_SIZE 100
-#define AUTOMATIC_MODE 1
-#define MANUAL_MODE 0
-#define SI7021_SLAVE_ADDRESS (0x40)
-#define TEMP_ADDRESS (0xE3)
-#define HUMIDITY_ADDRESS (0xE5)
-
 static volatile uint32_t log_counter=0;
 uint8_t log_type;
 uint8_t* logfile;
@@ -101,8 +99,8 @@ uint8_t* msg;
 uint8_t fans_on=0;
 bool buzzer=0;
 bool remote_mode = AUTOMATIC_MODE;
-int32_t current_temperature,current_gas,condition;
-double current_humidity;
+int32_t current_temperature,current_gas,condition,current_humidity;
+uint8_t failure_index=0;
 bool fans[5]={0,0,0,0,0};
 int32_t temperature_threshold[5]={20,25,30,35,50};
 int32_t humidity_threshold[5]={20,40,60,80,90};
@@ -154,7 +152,8 @@ typedef enum
     BUZZER_OFF='L',
     FORCE_CHANGE_FANS='M',
     GET_BUZZER='N',	
-    GET_STATUS='O',
+    GET_FAILURE='O',
+    GET_MODE='P',
 }uart_command_t;
 
 typedef struct
@@ -227,10 +226,39 @@ void logfile_setup(void)
 
 static void log_time(int sig, siginfo_t *si, void *uc)
 {
-	uint8_t input ='A';
+	uint8_t input = LOG_DATA;
 	sem_wait(sem_uart);
 	write(fd_uart4,(void*)&input,1);
 	sem_post(sem_logger);
+	input = GET_FAILURE;
+	sem_wait(sem_uart);					
+	write(fd_uart4,&input,1);
+	read(fd_uart4,(void*)&received_data,sizeof(received_data));					
+	failure_index=received_data.data;					
+	sem_post(sem_uart);	
+	input = GET_MODE;
+	sem_wait(sem_uart);					
+	write(fd_uart4,&input,1);
+	read(fd_uart4,(void*)&received_data,sizeof(received_data));
+	sem_post(sem_uart);	
+	input = GET_BUZZER;
+	sem_wait(sem_uart);					
+	write(fd_uart4,&input,1);
+	read(fd_uart4,(void*)&received_data,sizeof(received_data));
+	buzzer=received_data.data;					
+	sem_post(sem_uart);
+	if(buzzer)
+	{
+		printf("Buzzer is on\n");
+		//buzzer_control(1);
+	}
+	else
+	{
+		printf("Buzzer is off\n");
+		//buzzer_control(0);
+	}
+	printf("Failure mode: %s\n",failure_msg[failure_index]);
+	printf("Remote mode: %s\n",mode_msg[remote_mode]);
 }
 
 
@@ -302,21 +330,6 @@ void termios_init(void)
 	tcsetattr(fd_uart4,TCSANOW,&term_uart);
 }
 
-/*int uart_write(char data_write[])
-{
-	write(fd_uart0,data_write,strlen(data_write));
-	return 0;
-}
-
-char uart_read(void)
-{
-	char data_read[255];
-	read(fd_uart0,data_read,255); 
-    	buffer_out[res]=0;             /* set end of string, so we can printf */
-    	/*printf(":%s:%d\n",data_read, res);
-	return data_read;
-}*/
-
 int32_t main(int32_t argc, uint8_t **argv)
 {
 	FILE* fptr;
@@ -376,7 +389,8 @@ int32_t main(int32_t argc, uint8_t **argv)
 			BUZZER_OFF='L'\n \
 			FORCE_CHANGE_FANS='M'\n \
 			GET_BUZZER='N'\n \
-			GET_STATUS='O'\n \
+			GET_FAILURE='O'\n \
+			GET_MODE='P'\n \
 			EXIT CONTROL NODE='X'\n \
 			DISPLAY_COMMNANDS='?'\n");
 		timer_init();
@@ -402,8 +416,9 @@ int32_t main(int32_t argc, uint8_t **argv)
 					sem_wait(sem_uart);					
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
+					current_temperature=received_data.data;
 					sem_post(sem_uart);
-					printf("Temperature: %dC° %dF° %dK°\n",received_data.data,((9*received_data.data)/5)+32,received_data.data+273);
+					printf("Temperature: %dC° %dF° %dK°\n",current_temperature,((9*current_temperature)/5)+32,current_temperature+273);
 					break;	
 				}
 
@@ -412,8 +427,9 @@ int32_t main(int32_t argc, uint8_t **argv)
 					sem_wait(sem_uart);					
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
+					current_humidity=received_data.data;
 					sem_post(sem_uart);
-					printf("Humidity: %d%%\n",received_data.data);
+					printf("Humidity: %d%%\n",current_humidity);
 					break;
 				}
 
@@ -422,8 +438,9 @@ int32_t main(int32_t argc, uint8_t **argv)
 					sem_wait(sem_uart);					
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
+					current_gas=received_data.data;
 					sem_post(sem_uart);
-					printf("CO value: %dppm\n",received_data.data);
+					printf("CO value: %dppm\n",current_gas);
 					break;
 				}
 
@@ -445,8 +462,9 @@ int32_t main(int32_t argc, uint8_t **argv)
 					sem_wait(sem_uart);					
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
+					fans_on=received_data.data;
 					sem_post(sem_uart);
-					printf("%d fans are on\n",received_data.data);
+					printf("%d fans are on\n",fans_on);
 					break;
 				}
 
@@ -455,8 +473,9 @@ int32_t main(int32_t argc, uint8_t **argv)
 					sem_wait(sem_uart);					
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
+					buzzer=received_data.data;					
 					sem_post(sem_uart);
-					if(received_data.data)
+					if(buzzer)
 					{
 						printf("Buzzer is on\n");
 						//buzzer_control(1);
@@ -537,11 +556,25 @@ int32_t main(int32_t argc, uint8_t **argv)
 					break;
 				}
 
-				case GET_STATUS:
+				case GET_FAILURE:
 				{
 					sem_wait(sem_uart);					
 					write(fd_uart4,&data_read,1);
+					read(fd_uart4,(void*)&received_data,sizeof(received_data));					
+					failure_index=received_data.data;					
 					sem_post(sem_uart);
+					printf("Failure mode: %s\n",failure_msg[failure_index]);
+					break;
+				}
+
+				case GET_MODE:
+				{
+					sem_wait(sem_uart);					
+					write(fd_uart4,&data_read,1);
+					read(fd_uart4,(void*)&received_data,sizeof(received_data));
+					remote_mode=received_data.data;
+					sem_post(sem_uart);
+					printf("Remote mode: %s\n",mode_msg[remote_mode]);
 					break;
 				}
 				
