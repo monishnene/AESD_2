@@ -64,4 +64,4 @@ clean :
 	rm	-f	*.o	*.s	*.i	*.o	*.d	*.elf *.swp
 
 upload:
-	sudo	scp	control_node.c	root@$(ip):/
+	sudo	scp	log_test.c	control_node.c	root@$(ip):/

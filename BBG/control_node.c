@@ -188,13 +188,14 @@ void* logger(void* ptr)
 			size=read(fd_uart4,(void*)msg,sizeof(STR_SIZE));
 			n=fwrite(msg,1,size,fptr);
 			counter++;
-			if(!strncmp(msg+size-9,"LOG_END\n\r",9))
+			printf("Is it stuck in loop? loop:%d size:%d\n",counter,size);			
+			if(*(msg+size-1)==0)
 			{
-				printf("Is it stuck in loop? loop:%d size:%d\n",counter,size);
 				break;
 			} 				
 		}
 		fclose(fptr);
+		printf("logs received\n");
 		sem_post(sem_logfile);
 		//receive data from UART		
 		sem_post(sem_uart);
@@ -369,7 +370,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 			BUZZER_OFF='L'\n \
 			FORCE_CHANGE_FANS='M'\n \
 			GET_BUZZER='N'\n \
-			RETRY_BIST='O'\n \
+			GET_STATUS='O'\n \
 			EXIT CONTROL NODE='X'\n \
 			DISPLAY_COMMNANDS='?'\n");
 	//timer_init();
@@ -382,8 +383,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 		scanf("%c",&input);
 		sem_wait(sem_uart);		
 		write(fd_uart4,(void*)&input,1);
-		read(fd_uart4,(void*)&echo,1);
-		printf("Command Sent to TIVA: %c",echo);
+		printf("Command Sent to TIVA: %c",input);
 		send_data.data=0;
 		send_data.time_now=0;
 		send_data.command_id = input;

@@ -154,7 +154,7 @@ typedef enum
     BUZZER_OFF='L',
     FORCE_CHANGE_FANS='M',
     GET_BUZZER='N',	
-    GET_STATUS='O',
+    RETRY_BIST='O',
 }uart_command_t;
 
 typedef struct
@@ -188,9 +188,9 @@ void* logger(void* ptr)
 			size=read(fd_uart4,(void*)msg,sizeof(STR_SIZE));
 			n=fwrite(msg,1,size,fptr);
 			counter++;
-			if(strncmp(msg+size-9,"LOG_END\n\r",9))
+			printf("Is it stuck in loop? loop:%d size:%d\n",counter,size);			
+			if(!strncmp(msg+size-9,"LOG_END\n\r",9))
 			{
-				printf("Is it stuck in loop? loop:%d size:%d\n",counter,size);
 				break;
 			} 				
 		}
@@ -320,38 +320,41 @@ char uart_read(void)
 
 int32_t main(int32_t argc, uint8_t **argv)
 {
-	uint8_t data_read='\n';
+	uint8_t input=0,echo=0;
+	int32_t error=0;
+	uint32_t counter=0;	
+	pid_t process_id = getpid();	
+	if(argc<2)
+	{
+		printf("%s <logfilename>\n",argv[0]);	 //log file name as command line argument
+		return 0;
+	}	
+	condition=1;	
 	sem_unlink(uart_id);
 	sem_unlink(logfile_sem_id);
 	sem_unlink(logger_ready_id);
 	sem_logger=sem_open(logger_ready_id, O_CREAT, 0644,0);	
 	sem_logfile=sem_open(logfile_sem_id, O_CREAT, 0644,1);	
 	sem_uart=sem_open(uart_id, O_CREAT, 0644,1);
+	logfile=argv[1];
+	logfile_setup();
+	error = pthread_create(&thread_logger,NULL,logger,NULL);
+	//Signal Handling
+	//signal(SIGUSR1,kill_logger);
+	//signal(SIGUSR2,kill_server);
+	signal(SIGINT,system_end);
 	uart_init();
 	termios_init();
-	condition = 1;
-	if(fork())
+	//pthread join
+	if(!fork())
 	{
-		while(condition)
-		{
-			printf("Logger Blocked\n\r");
-			sem_wait(sem_logger);
-			while(1)
-			{
-				read(fd_uart4,&data_read,1);				
-				putchar(data_read);
-				if(data_read=='.')
-				{
-					printf("\n\rLogs Received\n\r");
-					sem_post(sem_uart);
-					break;
-				}
-			}
-		}
+		error=pthread_join(thread_logger,NULL);
 	}
-	else
+	if(process_id!=getpid())
 	{
-		printf("\n \
+		kill(getpid(),SIGINT);
+	}	
+	printf("\n \
 			LOG_DATA='A'\n \
 			GET_TEMPERATURE='B'\n \
 			GET_HUMIDITY='C'\n \
@@ -366,212 +369,187 @@ int32_t main(int32_t argc, uint8_t **argv)
 			BUZZER_OFF='L'\n \
 			FORCE_CHANGE_FANS='M'\n \
 			GET_BUZZER='N'\n \
-			GET_STATUS='O'\n \
+			RETRY_BIST='O'\n \
 			EXIT CONTROL NODE='X'\n \
 			DISPLAY_COMMNANDS='?'\n");
-		while(condition)
-		{	
-			if(data_read=='\n')
+	//timer_init();
+	while(condition)
+	{
+		if(input!='\n')
+		{
+			printf("\nEnter new command:\n");
+		}				
+		scanf("%c",&input);
+		sem_wait(sem_uart);		
+		write(fd_uart4,(void*)&input,1);
+		printf("Command Sent to TIVA: %c",input);
+		send_data.data=0;
+		send_data.time_now=0;
+		send_data.command_id = input;
+		switch(input)
+		{
+			case LOG_DATA:
 			{
-				printf("\n\rEnter next command:");
-			}	
-			data_read=getchar();
-			switch(data_read)
+				sem_post(sem_logger);
+				break;
+			}
+
+			case GET_TEMPERATURE:
+			{			
+				read(fd_uart4,(void*)&received_data,sizeof(received_data));
+				sem_post(sem_uart);
+				printf("Temperature: %dC° %dF° %dK°\n",received_data.data,((9*received_data.data)/5)+32,received_data.data+273);
+				break;	
+			}
+
+			case GET_HUMIDITY:
 			{
-				case LOG_DATA:
+				read(fd_uart4,(void*)&received_data,sizeof(received_data));
+				sem_post(sem_uart);
+				printf("Humidity: %d%%\n",received_data.data);
+				break;
+			}
+
+			case GET_GAS:
+			{
+				read(fd_uart4,(void*)&received_data,sizeof(received_data));
+				sem_post(sem_uart);
+				printf("CO value: %dppm\n",received_data.data);
+				break;
+			}
+
+			case GET_THRESHOLD:
+			{
+				read(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));
+				read(fd_uart4,(void*)&humidity_threshold,5*sizeof(int32_t));
+				read(fd_uart4,(void*)&gas_threshold,5*sizeof(int32_t));
+				sem_post(sem_uart);				
+				printf("Temperature Thresholds: %d %d %d %d %d", temperature_threshold[0],temperature_threshold[1],temperature_threshold[2],temperature_threshold[3],temperature_threshold[4]);
+				printf("Temperature Thresholds: %d %d %d %d %d", humidity_threshold[0],humidity_threshold[1],humidity_threshold[2],humidity_threshold[3],humidity_threshold[4]);
+				printf("Temperature Thresholds: %d %d %d %d %d", gas_threshold[0],gas_threshold[1],gas_threshold[2],gas_threshold[3],gas_threshold[4]);				
+				break;
+			}
+
+			case GET_FAN:
+			{
+				read(fd_uart4,(void*)&received_data,sizeof(received_data));
+				sem_post(sem_uart);
+				printf("%d fans are on\n",received_data.data);
+				break;
+			}
+
+			case GET_BUZZER:
+			{
+				read(fd_uart4,(void*)&received_data,sizeof(received_data));
+				sem_post(sem_uart);
+				if(received_data.data)
 				{
-					sem_wait(sem_uart);
-					sem_post(sem_logger);
-					write(fd_uart4,&data_read,1);
-					break;
-				}
-
-				case GET_TEMPERATURE:
-				{								
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					read(fd_uart4,(void*)&received_data,sizeof(received_data));
-					sem_post(sem_uart);
-					printf("Temperature: %dC° %dF° %dK°\n",received_data.data,((9*received_data.data)/5)+32,received_data.data+273);
-					break;	
-				}
-
-				case GET_HUMIDITY:
-				{			
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					read(fd_uart4,(void*)&received_data,sizeof(received_data));
-					sem_post(sem_uart);
-					printf("Humidity: %d%%\n",received_data.data);
-					break;
-				}
-
-				case GET_GAS:
-				{			
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					read(fd_uart4,(void*)&received_data,sizeof(received_data));
-					sem_post(sem_uart);
-					printf("CO value: %dppm\n",received_data.data);
-					break;
-				}
-
-				case GET_THRESHOLD:
-				{			
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					read(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));
-					read(fd_uart4,(void*)&humidity_threshold,5*sizeof(int32_t));
-					read(fd_uart4,(void*)&gas_threshold,5*sizeof(int32_t));
-					sem_post(sem_uart);				
-					printf("Temperature Thresholds: %d %d %d %d %d", temperature_threshold[0],temperature_threshold[1],temperature_threshold[2],temperature_threshold[3],temperature_threshold[4]);
-					printf("Temperature Thresholds: %d %d %d %d %d", humidity_threshold[0],humidity_threshold[1],humidity_threshold[2],humidity_threshold[3],humidity_threshold[4]);
-					printf("Temperature Thresholds: %d %d %d %d %d", gas_threshold[0],gas_threshold[1],gas_threshold[2],gas_threshold[3],gas_threshold[4]);				
-					break;
-				}
-				case GET_FAN:
-				{			
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					read(fd_uart4,(void*)&received_data,sizeof(received_data));
-					sem_post(sem_uart);
-					printf("%d fans are on\n",received_data.data);
-					break;
-				}
-
-				case GET_BUZZER:
-				{			
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					read(fd_uart4,(void*)&received_data,sizeof(received_data));
-					sem_post(sem_uart);
-					if(received_data.data)
-					{
-						printf("Buzzer is on\n");
-						//buzzer_control(1);
-					}
-					else
-					{
-						printf("Buzzer is off\n");
-						//buzzer_control(0);
-					}
-					break;
-				}
-
-				case CHANGE_MODE:
-				{			
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					sem_post(sem_uart);
-					break;
-				}
-
-				case CHANGE_TEMPERATURE_THRESHOLD:
-				{
-					printf("Enter new temperature thresholds\n\r Format: a b c d e {Enter}\n\r");
-					scanf("%d %d %d %d %d", &temperature_threshold[0],&temperature_threshold[1],&temperature_threshold[2],&temperature_threshold[3],&temperature_threshold[4]);								
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					write(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));
-					sem_post(sem_uart);
-					break;
-				}
-
-				case CHANGE_HUMIDITY_THRESHOLD:
-				{
-					printf("Enter new humidity thresholds\n\r Format: a b c d e {Enter}\n\r");
-					scanf("%d %d %d %d %d", &humidity_threshold[0],&humidity_threshold[1],&humidity_threshold[2],&humidity_threshold[3],&humidity_threshold[4]);
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					write(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));write(fd_uart4,(void*)&humidity_threshold,5*sizeof(int32_t));
-					sem_post(sem_uart);
-					break;
-				}
-
-				case CHANGE_GAS_THRESHOLD:
-				{
-					printf("Enter new gas thresholds\n\r Format: a b c d e {Enter}\n\r");
-					scanf("%d %d %d %d %d", &gas_threshold[0],&gas_threshold[1],&gas_threshold[2],&gas_threshold[3],&gas_threshold[4]);
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					write(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));write(fd_uart4,(void*)&gas_threshold,5*sizeof(int32_t));
-					sem_post(sem_uart);
-					break;
-				}
-
-				case BUZZER_ON:
-				{
+					printf("Buzzer is on\n");
 					//buzzer_control(1);
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					sem_post(sem_uart);
-					break;
 				}
-
-				case BUZZER_OFF:
+				else
 				{
+					printf("Buzzer is off\n");
 					//buzzer_control(0);
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					sem_post(sem_uart);
-					break;
 				}
+				break;
+			}
 
-				case FORCE_CHANGE_FANS:
-				{
-					printf("How many fans to turn on??\n");
-					scanf("%d",&(send_data.data));		
-					write(fd_uart4,(void*)&send_data,sizeof(send_data));
-					sem_post(sem_uart);
-					break;
-				}
+			case CHANGE_MODE:
+			{
+				sem_post(sem_uart);
+				break;
+			}
 
-				case GET_STATUS:
-				{
-					sem_wait(sem_uart);					
-					write(fd_uart4,&data_read,1);
-					sem_post(sem_uart);
-					break;
-				}
-				
-				case 'X':
-				{
-					condition=0;
-					break;
-				}
-		
-				case '\n':
-				{
-					break;
-				}
+			case CHANGE_TEMPERATURE_THRESHOLD:
+			{
+				scanf("%d %d %d %d %d", &temperature_threshold[0],&temperature_threshold[1],&temperature_threshold[2],&temperature_threshold[3],&temperature_threshold[4]);
+				write(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));
+				sem_post(sem_uart);
+				break;
+			}
+
+			case CHANGE_HUMIDITY_THRESHOLD:
+			{
+				scanf("%d %d %d %d %d", &humidity_threshold[0],&humidity_threshold[1],&humidity_threshold[2],&humidity_threshold[3],&humidity_threshold[4]);
+				write(fd_uart4,(void*)&humidity_threshold,5*sizeof(int32_t));
+				sem_post(sem_uart);
+				break;
+			}
+
+			case CHANGE_GAS_THRESHOLD:
+			{
+				scanf("%d %d %d %d %d", &gas_threshold[0],&gas_threshold[1],&gas_threshold[2],&gas_threshold[3],&gas_threshold[4]);
+				write(fd_uart4,(void*)&gas_threshold,5*sizeof(int32_t));
+				sem_post(sem_uart);
+				break;
+			}
+
+			case BUZZER_ON:
+			{
+				//buzzer_control(1);
+				sem_post(sem_uart);
+				break;
+			}
+
+			case BUZZER_OFF:
+			{
+				//buzzer_control(0);
+				sem_post(sem_uart);
+				break;
+			}
+
+			case FORCE_CHANGE_FANS:
+			{
+				printf("How many fans to turn on??\n");
+				scanf("%d",&(send_data.data));		
+				write(fd_uart4,(void*)&send_data,sizeof(send_data));
+				sem_post(sem_uart);
+				break;
+			}
+
+			case RETRY_BIST:
+			{
+				break;
+			}
 			
-				case '?':
-				{
-					printf("\n \
-				LOG_DATA='A'\n \
-				GET_TEMPERATURE='B'\n \
-				GET_HUMIDITY='C'\n \
-				GET_GAS='D'\n \
-				GET_THRESHOLD='E'\n \
-				GET_FAN='F'\n \
-				CHANGE_MODE='G'\n \
-				CHANGE_TEMPERATURE_THRESHOLD='H'\n \
-				CHANGE_HUMIDITY_THRESHOLD='I'\n \
-				CHANGE_GAS_THRESHOLD='J'\n \
-				BUZZER_ON='K'\n \
-				BUZZER_OFF='L'\n \
-				FORCE_CHANGE_FANS='M'\n \
-				GET_BUZZER='N'\n \
-				GET_STATUS='O'\n \
-				DISPLAY_COMMNANDS='?'\n");
-					break;		
-				}
+			case 'X':
+			{
+				condition=0;
+				break;
+			}
+	
+			case '\n':
+			{
+				break;
+			}
+		
+			case '?':
+			{
+				printf("\n \
+			LOG_DATA='A'\n \
+			GET_TEMPERATURE='B'\n \
+			GET_HUMIDITY='C'\n \
+			GET_GAS='D'\n \
+			GET_THRESHOLD='E'\n \
+			GET_FAN='F'\n \
+			CHANGE_MODE='G'\n \
+			CHANGE_TEMPERATURE_THRESHOLD='H'\n \
+			CHANGE_HUMIDITY_THRESHOLD='I'\n \
+			CHANGE_GAS_THRESHOLD='J'\n \
+			BUZZER_ON='K'\n \
+			BUZZER_OFF='L'\n \
+			FORCE_CHANGE_FANS='M'\n \
+			GET_BUZZER='N'\n \
+			RETRY_BIST='O'\n \
+			DISPLAY_COMMNANDS='?'\n");
+				break;		
+			}
 
-				default:
-				{
-					printf("Invalid Input\n");				
-					break;
-				}
+			default:
+			{
+				printf("Invalid Input\n");				
+				break;
 			}
 		}
 	}
