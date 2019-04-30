@@ -231,7 +231,6 @@ static void log_time(int sig, siginfo_t *si, void *uc)
 	sem_wait(sem_uart);
 	write(fd_uart4,(void*)&input,1);
 	sem_post(sem_logger);
-	//heartbeat();
 }
 
 
@@ -320,13 +319,16 @@ char uart_read(void)
 
 int32_t main(int32_t argc, uint8_t **argv)
 {
-	uint8_t data_read='\n';
+	FILE* fptr;
+	uint8_t data_read='\n',i=0;
 	sem_unlink(uart_id);
 	sem_unlink(logfile_sem_id);
 	sem_unlink(logger_ready_id);
 	sem_logger=sem_open(logger_ready_id, O_CREAT, 0644,0);	
 	sem_logfile=sem_open(logfile_sem_id, O_CREAT, 0644,1);	
 	sem_uart=sem_open(uart_id, O_CREAT, 0644,1);
+	logfile=argv[1];
+	logfile_setup();
 	uart_init();
 	termios_init();
 	condition = 1;
@@ -334,19 +336,27 @@ int32_t main(int32_t argc, uint8_t **argv)
 	{
 		while(condition)
 		{
-			printf("Logger Blocked\n\r");
 			sem_wait(sem_logger);
+			sem_wait(sem_logfile);
+			fptr=fopen(logfile,"a");
 			while(1)
 			{
-				read(fd_uart4,&data_read,1);				
-				putchar(data_read);
+				read(fd_uart4,&data_read,1);
+				fwrite(&data_read,1,1,fptr);
 				if(data_read=='.')
 				{
-					printf("\n\rLogs Received\n\r");
-					sem_post(sem_uart);
+					for(i=0;i<2;i++)
+					{
+						read(fd_uart4,&data_read,1);
+						fwrite(&data_read,1,1,fptr);
+					}
 					break;
 				}
 			}
+			fclose(fptr);
+			sem_post(sem_logfile);
+			sem_post(sem_uart);
+			printf("Logs Received\n\r");
 		}
 	}
 	else
@@ -369,11 +379,12 @@ int32_t main(int32_t argc, uint8_t **argv)
 			GET_STATUS='O'\n \
 			EXIT CONTROL NODE='X'\n \
 			DISPLAY_COMMNANDS='?'\n");
+		timer_init();
 		while(condition)
 		{	
 			if(data_read=='\n')
 			{
-				printf("\n\rEnter next command:");
+				printf("Enter next command:\n\r");
 			}	
 			data_read=getchar();
 			switch(data_read)
