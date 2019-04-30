@@ -31,7 +31,6 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include "bbgled.h"
 
 //reference http://tldp.org/HOWTO/Serial-Programming-HOWTO/x115.html
 
@@ -44,8 +43,8 @@
 #ifndef DEBUG
 #define printf(fmt, ...) (0)
 #endif
-#define BAUDRATE B115200    
-#define UART4 "/dev/ttyO4"	 
+#define BAUDRATE B115200
+#define UART4 "/dev/ttyO4"
 #define _POSIX_SOURCE 1 /* POSIX compliant source */
 #define FALSE 0
 #define TRUE 1
@@ -92,7 +91,7 @@ char buffer_in[255];
 char buffer_out[]="\nHello World!\nUart is working ;-)\n";
 uint8_t* mode_msg[]={"Manual\t","Automatic"};
 uint8_t* failure_msg[]={"Normal\t","Degraded","Failure\t"};
-volatile int STOP=FALSE; 
+volatile int STOP=FALSE;
 static volatile uint32_t log_counter=0;
 uint8_t log_type;
 uint8_t* logfile;
@@ -112,13 +111,13 @@ uint32_t g_ui32SysClock;
 uint32_t sys_clock;
 char uart_val;
 
-typedef enum
+typedef enum //Enum for Log queue status
 {
     QUEUE_FULL=0,
     ERROR_LOGTYPE=1,
 }error_t;
 
-typedef enum
+typedef enum //Enum for log type
 {
     LOG_LED=0,
     LOG_TEMPERATURE=1,
@@ -130,14 +129,14 @@ typedef enum
     LOG_ERROR=7,
 }logtype_t;
 
-typedef struct
+typedef struct //Structure for storing data in queue
 {
     logtype_t log_id;
     int32_t data;
     int32_t time_now;
 }queue_data_t;
 
-typedef enum
+typedef enum // enum for GUI interface and commands over uart
 {
     LOG_DATA='A',
     GET_TEMPERATURE='B',
@@ -152,12 +151,12 @@ typedef enum
     BUZZER_ON='K',
     BUZZER_OFF='L',
     FORCE_CHANGE_FANS='M',
-    GET_BUZZER='N',	
+    GET_BUZZER='N',
     GET_FAILURE='O',
     GET_MODE='P',
 }uart_command_t;
 
-typedef struct
+typedef struct //struct for sending data over uart
 {
     uart_command_t command_id;
     int32_t data;
@@ -169,7 +168,7 @@ uart_data_t send_data, received_data;
 * logger function to log data
 ******************************/
 void* logger(void* ptr)
-{	
+{
 	uint32_t size=0,counter=0;
 	FILE* fptr;
 	uart_data_t command_sent;
@@ -180,7 +179,7 @@ void* logger(void* ptr)
 	{
 		sem_wait(sem_logger);
 		sem_wait(sem_logfile);
-		fptr=fopen(logfile,"a");		
+		fptr=fopen(logfile,"a");
 		//uart_send
 		counter=0;
 		while(1)
@@ -192,20 +191,22 @@ void* logger(void* ptr)
 			{
 				printf("Is it stuck in loop? loop:%d size:%d\n",counter,size);
 				break;
-			} 				
+			}
 		}
 		fclose(fptr);
 		sem_post(sem_logfile);
-		//receive data from UART		
+		//receive data from UART
 		sem_post(sem_uart);
 	}
 	free(msg);
 	pthread_exit(ptr);
 }
 
-/*****************************
-* log file setup function
-********************************/
+
+/***********************************************************************
+ * logfile_setup()
+ * @brief create a backup of old log file and create a new one
+/***********************************************************************/
 void logfile_setup(void)
 {
 	FILE* fptr=fopen(logfile,"r");
@@ -219,12 +220,19 @@ void logfile_setup(void)
 	{
 		fclose(fptr);
 		sprintf(new_filename,"backup_%d_%s",counter++,logfile); //to create backup files
-		fptr=fopen(new_filename,"r");	
+		fptr=fopen(new_filename,"r");
 	}
 	rename(logfile,new_filename);
 	return;
 }
 
+/***********************************************************************
+ * log_time()
+ * @brief Function to handle timer signal
+ * @param sig signal used to trigger the function
+ * @param si signal information
+ * @param uc pointer to data passed
+/***********************************************************************/
 static void log_time(int sig, siginfo_t *si, void *uc)
 {
 	uint8_t input = LOG_DATA;
@@ -232,21 +240,21 @@ static void log_time(int sig, siginfo_t *si, void *uc)
 	write(fd_uart4,(void*)&input,1);
 	sem_post(sem_logger);
 	input = GET_FAILURE;
-	sem_wait(sem_uart);					
+	sem_wait(sem_uart);
 	write(fd_uart4,&input,1);
-	read(fd_uart4,(void*)&received_data,sizeof(received_data));					
-	failure_index=received_data.data;					
-	sem_post(sem_uart);	
+	read(fd_uart4,(void*)&received_data,sizeof(received_data));
+	failure_index=received_data.data;
+	sem_post(sem_uart);
 	input = GET_MODE;
-	sem_wait(sem_uart);					
+	sem_wait(sem_uart);
 	write(fd_uart4,&input,1);
 	read(fd_uart4,(void*)&received_data,sizeof(received_data));
-	sem_post(sem_uart);	
+	sem_post(sem_uart);
 	input = GET_BUZZER;
-	sem_wait(sem_uart);					
+	sem_wait(sem_uart);
 	write(fd_uart4,&input,1);
 	read(fd_uart4,(void*)&received_data,sizeof(received_data));
-	buzzer=received_data.data;					
+	buzzer=received_data.data;
 	sem_post(sem_uart);
 	if(!buzzer)
 	{
@@ -275,20 +283,24 @@ static void log_time(int sig, siginfo_t *si, void *uc)
 	}
 	if(remote_mode==0)
 	{
-		led_off(3);	
+		led_off(3);
 	}
 	else
 	{
-		led_on(3);	
+		led_on(3);
 	}*/
 	printf("Failure mode: %s\n",failure_msg[failure_index]);
 	printf("Remote mode: %s\n",mode_msg[remote_mode]);
 }
 
-
+/***********************************************************************
+ * timer_init()
+ * @brief Initialize timer to run events at particular Period
+ * @return error if any
+/***********************************************************************/
 int32_t timer_init(void)
 {
-	int32_t error=0;	
+	int32_t error=0;
 	timer_t timerid;
 	struct sigevent signal_event;
 	struct itimerspec timer_data;
@@ -312,14 +324,24 @@ int32_t timer_init(void)
 	return error;
 }
 
+
+/***********************************************************************
+ * system_end()
+ * @brief This function is used to exit the code smoothly
+ * @param sig signal used to trigger the function
+/***********************************************************************/
 void system_end(int sig)
 {
 	condition=0;
 }
 
+/***********************************************************************
+ * uart_init()
+ * @brief This function is used to initialize the uart
+/***********************************************************************/
 void uart_init(void)
 {
-	fd_uart4 = open(UART4, O_RDWR,O_SYNC, O_NOCTTY); 
+	fd_uart4 = open(UART4, O_RDWR,O_SYNC, O_NOCTTY);
 	if (fd_uart4 <0)
 	{
 		printf("uart4 not found\n");
@@ -332,11 +354,15 @@ void uart_init(void)
 	fcntl(fd_uart4,F_SETFL,0);
 }
 
+/***********************************************************************
+ * termios_init()
+ * @brief This function is used to initialize  termios setup
+/***********************************************************************/
 void termios_init(void)
 {
-	tcgetattr(fd_uart4,&term_uart); /* save current serial port settings */
+	tcgetattr(fd_uart4,&term_uart);
 
-	/* 
+	/*
 	BAUDRATE: Set bps rate. You could also use cfsetispeed and cfsetospeed.
 	CRTSCTS : output hardware flow control (only used if the cable has
 	all necessary lines. See sect. 7 of Serial-HOWTO)
@@ -354,6 +380,13 @@ void termios_init(void)
 	tcsetattr(fd_uart4,TCSANOW,&term_uart);
 }
 
+
+/***********************************************************************
+ * main()
+ * @param argc number of command line arguments passed
+ * @param argv command line arguments passed (logfile name)
+ * @brief This is the main function for the Project.
+ /***********************************************************************/
 int32_t main(int32_t argc, uint8_t **argv)
 {
 	FILE* fptr;
@@ -361,8 +394,8 @@ int32_t main(int32_t argc, uint8_t **argv)
 	sem_unlink(uart_id);
 	sem_unlink(logfile_sem_id);
 	sem_unlink(logger_ready_id);
-	sem_logger=sem_open(logger_ready_id, O_CREAT, 0644,0);	
-	sem_logfile=sem_open(logfile_sem_id, O_CREAT, 0644,1);	
+	sem_logger=sem_open(logger_ready_id, O_CREAT, 0644,0);
+	sem_logfile=sem_open(logfile_sem_id, O_CREAT, 0644,1);
 	sem_uart=sem_open(uart_id, O_CREAT, 0644,1);
 	logfile=argv[1];
 	logfile_setup();
@@ -372,7 +405,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 	condition = 1;
 	if(fork())
 	{
-		while(condition)
+		while(condition) // Logger process
 		{
 			sem_wait(sem_logger);
 			sem_wait(sem_logfile);
@@ -398,7 +431,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 		}
 	}
 	else
-	{
+	{ //GUI MENU
 		printf("\n \
 			LOG_DATA='A'\n \
 			GET_TEMPERATURE='B'\n \
@@ -419,16 +452,16 @@ int32_t main(int32_t argc, uint8_t **argv)
 			EXIT CONTROL NODE='X'\n \
 			DISPLAY_COMMNANDS='?'\n");
 		timer_init();
-		while(condition)
-		{	
+		while(condition) //GUI Process
+		{
 			if(data_read=='\n')
 			{
 				printf("Enter next command:\n\r");
-			}	
+			}
 			data_read=getchar();
-			switch(data_read)
+			switch(data_read) //switch case for command
 			{
-				case LOG_DATA:
+				case LOG_DATA: //get logs
 				{
 					sem_wait(sem_uart);
 					sem_post(sem_logger);
@@ -437,19 +470,19 @@ int32_t main(int32_t argc, uint8_t **argv)
 				}
 
 				case GET_TEMPERATURE:
-				{								
-					sem_wait(sem_uart);					
+				{
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
 					current_temperature=received_data.data;
 					sem_post(sem_uart);
 					printf("Temperature: %dC° %dF° %dK°\n",current_temperature,((9*current_temperature)/5)+32,current_temperature+273);
-					break;	
+					break;
 				}
 
 				case GET_HUMIDITY:
-				{			
-					sem_wait(sem_uart);					
+				{
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
 					current_humidity=received_data.data;
@@ -459,8 +492,8 @@ int32_t main(int32_t argc, uint8_t **argv)
 				}
 
 				case GET_GAS:
-				{			
-					sem_wait(sem_uart);					
+				{
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
 					current_gas=received_data.data;
@@ -470,21 +503,21 @@ int32_t main(int32_t argc, uint8_t **argv)
 				}
 
 				case GET_THRESHOLD:
-				{			
-					sem_wait(sem_uart);					
+				{
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));
 					read(fd_uart4,(void*)&humidity_threshold,5*sizeof(int32_t));
 					read(fd_uart4,(void*)&gas_threshold,5*sizeof(int32_t));
-					sem_post(sem_uart);				
+					sem_post(sem_uart);
 					printf("Temperature Thresholds: %d %d %d %d %d", temperature_threshold[0],temperature_threshold[1],temperature_threshold[2],temperature_threshold[3],temperature_threshold[4]);
 					printf("Temperature Thresholds: %d %d %d %d %d", humidity_threshold[0],humidity_threshold[1],humidity_threshold[2],humidity_threshold[3],humidity_threshold[4]);
-					printf("Temperature Thresholds: %d %d %d %d %d", gas_threshold[0],gas_threshold[1],gas_threshold[2],gas_threshold[3],gas_threshold[4]);				
+					printf("Temperature Thresholds: %d %d %d %d %d", gas_threshold[0],gas_threshold[1],gas_threshold[2],gas_threshold[3],gas_threshold[4]);
 					break;
 				}
 				case GET_FAN:
-				{			
-					sem_wait(sem_uart);					
+				{
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
 					fans_on=received_data.data;
@@ -494,11 +527,11 @@ int32_t main(int32_t argc, uint8_t **argv)
 				}
 
 				case GET_BUZZER:
-				{			
-					sem_wait(sem_uart);					
+				{
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
-					buzzer=received_data.data;					
+					buzzer=received_data.data;
 					sem_post(sem_uart);
 					if(!buzzer)
 					{
@@ -514,8 +547,8 @@ int32_t main(int32_t argc, uint8_t **argv)
 				}
 
 				case CHANGE_MODE:
-				{			
-					sem_wait(sem_uart);					
+				{
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					sem_post(sem_uart);
 					break;
@@ -524,8 +557,8 @@ int32_t main(int32_t argc, uint8_t **argv)
 				case CHANGE_TEMPERATURE_THRESHOLD:
 				{
 					printf("Enter new temperature thresholds\n\r Format: a b c d e {Enter}\n\r");
-					scanf("%d %d %d %d %d", &temperature_threshold[0],&temperature_threshold[1],&temperature_threshold[2],&temperature_threshold[3],&temperature_threshold[4]);								
-					sem_wait(sem_uart);					
+					scanf("%d %d %d %d %d", &temperature_threshold[0],&temperature_threshold[1],&temperature_threshold[2],&temperature_threshold[3],&temperature_threshold[4]);
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					write(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));
 					sem_post(sem_uart);
@@ -536,7 +569,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 				{
 					printf("Enter new humidity thresholds\n\r Format: a b c d e {Enter}\n\r");
 					scanf("%d %d %d %d %d", &humidity_threshold[0],&humidity_threshold[1],&humidity_threshold[2],&humidity_threshold[3],&humidity_threshold[4]);
-					sem_wait(sem_uart);					
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					write(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));write(fd_uart4,(void*)&humidity_threshold,5*sizeof(int32_t));
 					sem_post(sem_uart);
@@ -547,7 +580,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 				{
 					printf("Enter new gas thresholds\n\r Format: a b c d e {Enter}\n\r");
 					scanf("%d %d %d %d %d", &gas_threshold[0],&gas_threshold[1],&gas_threshold[2],&gas_threshold[3],&gas_threshold[4]);
-					sem_wait(sem_uart);					
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					write(fd_uart4,(void*)&temperature_threshold,5*sizeof(int32_t));write(fd_uart4,(void*)&gas_threshold,5*sizeof(int32_t));
 					sem_post(sem_uart);
@@ -556,7 +589,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 				case BUZZER_ON:
 				{
-					sem_wait(sem_uart);					
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					sem_post(sem_uart);
 					break;
@@ -564,7 +597,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 				case BUZZER_OFF:
 				{
-					sem_wait(sem_uart);					
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					sem_post(sem_uart);
 					break;
@@ -573,7 +606,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 				case FORCE_CHANGE_FANS:
 				{
 					printf("How many fans to turn on??\n");
-					scanf("%d",&(send_data.data));		
+					scanf("%d",&(send_data.data));
 					write(fd_uart4,(void*)&send_data,sizeof(send_data));
 					sem_post(sem_uart);
 					break;
@@ -581,10 +614,10 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 				case GET_FAILURE:
 				{
-					sem_wait(sem_uart);					
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
-					read(fd_uart4,(void*)&received_data,sizeof(received_data));					
-					failure_index=received_data.data;					
+					read(fd_uart4,(void*)&received_data,sizeof(received_data));
+					failure_index=received_data.data;
 					sem_post(sem_uart);
 					printf("Failure mode: %s\n",failure_msg[failure_index]);
 					break;
@@ -592,7 +625,7 @@ int32_t main(int32_t argc, uint8_t **argv)
 
 				case GET_MODE:
 				{
-					sem_wait(sem_uart);					
+					sem_wait(sem_uart);
 					write(fd_uart4,&data_read,1);
 					read(fd_uart4,(void*)&received_data,sizeof(received_data));
 					remote_mode=received_data.data;
@@ -600,18 +633,18 @@ int32_t main(int32_t argc, uint8_t **argv)
 					printf("Remote mode: %s\n",mode_msg[remote_mode]);
 					break;
 				}
-				
-				case 'X':
+
+				case 'X': //exit using menu
 				{
 					condition=0;
 					break;
 				}
-		
-				case '\n':
+
+				case '\n': //skip unnecessary characters
 				{
 					break;
 				}
-			
+
 				case '?':
 				{
 					printf("\n \
@@ -631,12 +664,12 @@ int32_t main(int32_t argc, uint8_t **argv)
 				GET_BUZZER='N'\n \
 				GET_STATUS='O'\n \
 				DISPLAY_COMMNANDS='?'\n");
-					break;		
+					break;
 				}
 
 				default:
 				{
-					printf("Invalid Input\n");				
+					printf("Invalid Input\n"); //If a char is not a command
 					break;
 				}
 			}
