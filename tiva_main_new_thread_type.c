@@ -253,165 +253,8 @@ void gpio_init(void)
     GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_5);
 }
 
-void UARTIntHandler(void )
-{
-    uart_data_t send_data, received_data;
-    queue_data_t data_log;
-    uint32_t status = UARTIntStatus(UART7_BASE, true);
-    send_data.time_now=xTaskGetTickCount();
-    uint8_t command=UARTCharGet(UART7_BASE);
-    data_log.log_id=LOG_COMMAND;
-    data_log.data=command;
-    queue_adder(&data_log);
-    send_data.command_id=(uart_command_t)command;
-    send_data.time_now=xTaskGetTickCount();
-    switch(command)
-    {
-        case LOG_DATA:
-        {
-            xSemaphoreGive(sem_log);
-            break;
-        }
-
-        case GET_TEMPERATURE:
-        {
-            send_data.data=current_temperature;
-            uart_send((void*)&send_data,sizeof(uart_data_t));
-            break;
-        }
-
-        case GET_HUMIDITY:
-        {
-            send_data.data=current_humidity;
-           uart_send((void*)&send_data,sizeof(uart_data_t));
-            break;
-        }
-
-        case GET_GAS:
-        {
-            send_data.data=current_gas;
-           uart_send((void*)&send_data,sizeof(uart_data_t));
-            break;
-        }
-
-        case GET_THRESHOLD:
-        {
-            //uartprintf("The temperature threshold is %d", temperature_threshold);
-            //uartprintf("The humidity threshold is %d", humidity_threshold);
-            //uartprintf("The gas threshold is %d", gas_threshold);
-            uart_send((void*)&temperature_threshold,sizeof(int32_t)*5);
-            uart_send((void*)&humidity_threshold,sizeof(int32_t)*5);
-            uart_send((void*)&gas_threshold,sizeof(int32_t)*5);
-            break;
-        }
-
-        case GET_FAN:
-        {
-            send_data.data=fans_on;
-            uart_send((void*)&send_data,sizeof(uart_data_t));
-            break;
-        }
-
-        case GET_BUZZER:
-        {
-            send_data.data=buzzer;
-            uart_send((void*)&send_data,sizeof(uart_data_t));
-            break;
-        }
-
-        case CHANGE_MODE:
-        {
-            if(remote_mode)
-            {
-               remote_mode=MANUAL_MODE;
-            }
-            else
-            {
-               remote_mode=AUTOMATIC_MODE;
-            }
-            break;
-        }
-
-        case CHANGE_TEMPERATURE_THRESHOLD:
-        {
-            uart_receive((void*)&temperature_threshold,sizeof(int32_t)*5);
-            break;
-        }
-
-        case CHANGE_HUMIDITY_THRESHOLD:
-        {
-            uart_receive((void*)&humidity_threshold,sizeof(int32_t)*5);
-            break;
-        }
-
-        case CHANGE_GAS_THRESHOLD:
-        {
-            uart_receive((void*)&gas_threshold,sizeof(int32_t)*5);
-            break;
-        }
-
-
-        case BUZZER_ON:
-        {
-            remote_mode=MANUAL_MODE;
-            buzzer=0;
-            GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
-            GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
-            break;
-        }
-
-        case BUZZER_OFF:
-        {
-            remote_mode=MANUAL_MODE;
-            buzzer=1;
-            GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_4,buzzer);
-            GPIOPinWrite(GPIO_PORTL_BASE, GPIO_PIN_5,buzzer);
-            break;
-        }
-
-        case FORCE_CHANGE_FANS:
-        {
-            uart_receive((void*)&received_data,sizeof(uart_data_t));
-            if(received_data.data<6)
-            {
-                remote_mode=MANUAL_MODE;
-                fans_on=received_data.data;
-                Fan_update(fans_on);
-            }
-            break;
-        }
-
-        case GET_FAILURE:
-        {
-            send_data.data=failure_index;
-            uart_send((void*)&send_data,sizeof(uart_data_t));
-            break;
-        }
-
-        case GET_MODE:
-        {
-            send_data.data=remote_mode;
-            uart_send((void*)&send_data,sizeof(uart_data_t));
-            break;
-        }
-
-        default:
-        {
-            break;
-        }
-    }
-    UARTIntClear(UART7_BASE, status);
-}
-
 void uart_init(void)
 {
-    //    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
-    //    GPIOPinConfigure(GPIO_PA0_U0RX);
-    //    GPIOPinConfigure(GPIO_PA1_U0TX);
-    //    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
-    //    UARTClockSourceSet(UART0_BASE, UART_CLOCK_PIOSC);
-    //    GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
-
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
     SysCtlPeripheralEnable(SYSCTL_PERIPH_UART7);
     GPIOPinConfigure(GPIO_PC4_U7RX);
@@ -420,9 +263,6 @@ void uart_init(void)
     UARTConfigSetExpClk(UART7_BASE, g_ui32SysClock, 115200,
                            (UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
                             UART_CONFIG_PAR_NONE));
-    //IntEnable(INT_UART7);
-    //UARTIntEnable(UART7_BASE,UART_INT_RX | UART_INT_RT);
-    //UARTClockSourceSet(UART7_BASE, UART_CLOCK_PIOSC);
 }
 
 void UARTFxn(void* ptr)
@@ -827,11 +667,6 @@ void sensorFxn(void* ptr)
            sensor_status=1;
            led_status&=0xFD;
        }
-//       if(i++==10)
-//       {
-//           i=0;
-//           xSemaphoreGive(sem_log);
-//       }
        queue_adder(&data_send);
        LEDWrite(0x0F,led_status);
     }
@@ -856,7 +691,7 @@ int main(void)
     log_queue=xQueueCreate(QUEUE_SIZE,sizeof(queue_data_t));
     sem_read = xSemaphoreCreateBinary();
     sem_log = xSemaphoreCreateBinary();
-    sem_uart = xSemaphoreCreateBinary();
+    sem_uart = xSemaphoreCreateBinary();A
     sem_uart_comm = xSemaphoreCreateBinary();
     xSemaphoreGive(sem_uart);
     // Initialize the GPIO pins for the Launchpad
@@ -867,7 +702,6 @@ int main(void)
     xTaskCreate(loggerFxn, (const portCHAR *)"logger", TASKSTACKSIZE, NULL, 1, NULL);
     xTaskCreate(gasFxn, (const portCHAR *)"gas", TASKSTACKSIZE, NULL, 1, NULL);
     xTaskCreate(UARTFxn, (const portCHAR *)"uart", TASKSTACKSIZE, NULL, 1, NULL);
-    //IntMasterEnable();
     vTaskStartScheduler();
     return 0;
 }
