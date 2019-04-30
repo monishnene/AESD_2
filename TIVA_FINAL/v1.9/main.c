@@ -1,12 +1,12 @@
-/* AESD Project 2 Remote node
- *
- * main.c
- *
- * Monish Nene & Sanika Dongre
- *
- *
- */
+/******************************************
+* remote_node.c
+* Author: Monish Nene and Sanika Dongre
+* Date created: 04/18/19
+*******************************************/
 
+/*******************************************
+* Includes
+*******************************************/
 #include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -41,6 +41,10 @@
 #include "inc/hw_ints.h"
 #include "utils/uartstdio.h"
 
+
+/*******************************************
+* Macros
+*******************************************/
 #define MQ_SIZE         (10)            // Size of the message queue
 #define TASKSTACKSIZE   1024
 #define STR_SIZE 200
@@ -66,6 +70,10 @@
 #define DEGRADED 1
 #define FAILURE 2
 
+/*****************************
+* Global variables
+* shared mem and semaphores
+*****************************/
 QueueHandle_t log_queue;
 SemaphoreHandle_t sem_log,sem_read,sem_uart,sem_uart_comm;
 static volatile uint32_t log_counter=0;
@@ -91,13 +99,13 @@ bool sensor_status=1;
 bool gas_status=1;
 uint32_t g_ui32SysClock;
 
-typedef enum
+typedef enum //enum to check if queue is full
 {
     QUEUE_FULL=0,
     ERROR_LOGTYPE=1,
 }error_t;
 
-typedef enum
+typedef enum // enum for log type
 {
     LOG_LED=0,
     LOG_TEMPERATURE=1,
@@ -109,7 +117,7 @@ typedef enum
     LOG_ERROR=7,
 }logtype_t;
 
-typedef struct
+typedef struct // struct for queue data entry
 {
     logtype_t log_id;
     int32_t data;
@@ -118,7 +126,7 @@ typedef struct
     bool mode;
 }queue_data_t;
 
-typedef enum
+typedef enum //enum for command over uart
 {
     LOG_DATA='A',
     GET_TEMPERATURE='B',
@@ -138,7 +146,7 @@ typedef enum
     GET_MODE='P',
 }uart_command_t;
 
-typedef struct
+typedef struct //struct for sending and receiving data over uart
 {
     uart_command_t command_id;
     int32_t data;
@@ -146,11 +154,22 @@ typedef struct
 }uart_data_t;
 
 
+/***********************************************************************
+ * exit_handler()
+ * @brief This function is used to exit the code smoothly
+/***********************************************************************/
 void exit_handler(void)
 {
     condition=0;
 }
 
+/***********************************************************************
+ * uart_send()
+ * @brief This function is used to send data over uart
+ * @param pointer to the data to be sent
+ * @param size of data to be sent
+ * @return size of data sent
+/***********************************************************************/
 int32_t uart_send(uint8_t* ptr, uint32_t size)
 {
     int32_t i=0;
@@ -166,6 +185,13 @@ int32_t uart_send(uint8_t* ptr, uint32_t size)
     return i;
 }
 
+/***********************************************************************
+ * uart_receive()
+ * @brief This function is used to receive data over uart
+ * @param pointer to the location for data to be stored
+ * @param size of data to be received
+ * @return size of data received
+/***********************************************************************/
 int32_t uart_receive(uint8_t* ptr, uint32_t size)
 {
     int32_t i=0;
@@ -176,6 +202,11 @@ int32_t uart_receive(uint8_t* ptr, uint32_t size)
     return i;
 }
 
+/***********************************************************************
+ * queue_adder()
+ * @brief This function is add data to message queue and keep a track of it's size
+ * @param pointer to the data to be added to queue
+/***********************************************************************/
 void queue_adder(queue_data_t* data_send)
 {
     data_send->time_now =  xTaskGetTickCount();
@@ -207,6 +238,11 @@ void queue_adder(queue_data_t* data_send)
     }
 }
 
+/***********************************************************************
+ * Fan_update()
+ * @brief This function is used to turn fans on and off
+ * @param no. of fans to be turned on
+/***********************************************************************/
 void Fan_update(int8_t value)
 {
     queue_data_t data_send;
@@ -263,6 +299,10 @@ void Fan_update(int8_t value)
     queue_adder(&data_send);
 }
 
+/***********************************************************************
+ * i2c_init()
+ * @brief This function is used to initialize i2c pins and clocks
+/***********************************************************************/
 void i2c_init(void)
 {
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
@@ -277,6 +317,10 @@ void i2c_init(void)
     I2CMasterInitExpClk(I2C0_BASE, g_ui32SysClock, false);
 }
 
+/***********************************************************************
+ * gpio_init()
+ * @brief This function is used to initialize gpio pins for hardware control
+/***********************************************************************/
 void gpio_init(void)
 {
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOL);
@@ -289,6 +333,10 @@ void gpio_init(void)
     GPIOPinTypeGPIOOutput(GPIO_PORTL_BASE,GPIO_PIN_5);
 }
 
+/***********************************************************************
+ * uart_init()
+ * @brief This function is used to initialize uart
+/***********************************************************************/
 void uart_init(void)
 {
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOC);
@@ -301,6 +349,11 @@ void uart_init(void)
                             UART_CONFIG_PAR_NONE));
 }
 
+/***********************************************************************
+ * UARTFxn()
+ * @brief This function is used to handle uart communication
+ * @param ptr to data to be sent if any
+/***********************************************************************/
 void UARTFxn(void* ptr)
 {
     uint8_t command;
@@ -309,7 +362,7 @@ void UARTFxn(void* ptr)
     send_data.time_now=xTaskGetTickCount();
     while(condition)
     {
-        command=UARTCharGet(UART7_BASE);
+        command=UARTCharGet(UART7_BASE); //polling for command
         data_log.log_id=LOG_COMMAND;
         data_log.data=command;
         queue_adder(&data_log);
@@ -317,34 +370,34 @@ void UARTFxn(void* ptr)
         send_data.time_now=xTaskGetTickCount();
         switch(command)
         {
-            case LOG_DATA:
+            case LOG_DATA: //log data
             {
-                xSemaphoreGive(sem_log);
+                xSemaphoreGive(sem_log); //release semaphore for logger
                 break;
             }
 
-            case GET_TEMPERATURE:
+            case GET_TEMPERATURE: //send temperature value
             {
                 send_data.data=current_temperature;
                 uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
-            case GET_HUMIDITY:
+            case GET_HUMIDITY: //send humidity value
             {
                 send_data.data=current_humidity;
                uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
-            case GET_GAS:
+            case GET_GAS: //send gas value
             {
                 send_data.data=current_gas;
                uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
-            case GET_THRESHOLD:
+            case GET_THRESHOLD: //send threshold values
             {
                 //uartprintf("The temperature threshold is %d", temperature_threshold);
                 //uartprintf("The humidity threshold is %d", humidity_threshold);
@@ -355,21 +408,21 @@ void UARTFxn(void* ptr)
                 break;
             }
 
-            case GET_FAN:
+            case GET_FAN: //send fans on
             {
                 send_data.data=fans_on;
                 uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
-            case GET_BUZZER:
+            case GET_BUZZER: //send buzzer status
             {
                 send_data.data=buzzer;
                 uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
-            case CHANGE_MODE:
+            case CHANGE_MODE: //change mode automatic or manual
             {
                 if(remote_mode)
                 {
@@ -419,7 +472,7 @@ void UARTFxn(void* ptr)
                 break;
             }
 
-            case FORCE_CHANGE_FANS:
+            case FORCE_CHANGE_FANS: //change fans and setup change to manual mode
             {
                 uart_receive((void*)&received_data,sizeof(uart_data_t));
                 if(received_data.data<6)
@@ -431,14 +484,14 @@ void UARTFxn(void* ptr)
                 break;
             }
 
-            case GET_FAILURE:
+            case GET_FAILURE: //send failure status
             {
                 send_data.data=failure_index;
                 uart_send((void*)&send_data,sizeof(uart_data_t));
                 break;
             }
 
-            case GET_MODE:
+            case GET_MODE: //send current mode
             {
                 send_data.data=remote_mode;
                 uart_send((void*)&send_data,sizeof(uart_data_t));
@@ -446,7 +499,7 @@ void UARTFxn(void* ptr)
             }
 
 
-            default:
+            default: //escape for invalid command
             {
                 break;
             }
@@ -455,6 +508,11 @@ void UARTFxn(void* ptr)
     vTaskDelete(NULL);
 }
 
+/***********************************************************************
+ * loggerFxn()
+ * @brief This function is used to log data to uart
+ * @param ptr to data to be sent if any
+/***********************************************************************/
 void loggerFxn(void* ptr)
 {
     uint8_t time_str[50];
@@ -555,6 +613,11 @@ void loggerFxn(void* ptr)
     vTaskDelete(NULL);
 }
 
+/***********************************************************************
+ * gasFxn()
+ * @brief This function is used to collect data from gas sensor
+ * @param ptr to data to be sent if any
+/***********************************************************************/
 void gasFxn(void* ptr)
 {
     queue_data_t data_send;
@@ -592,6 +655,11 @@ void gasFxn(void* ptr)
     vTaskDelete(NULL);
 }
 
+/***********************************************************************
+ * thresholdFxn()
+ * @brief This function is used to handle closed loop control according to thresholds
+ * @param ptr to data to be sent if any
+/***********************************************************************/
 void thresholdFxn(void* ptr)
 {
     uint8_t i=0;
@@ -655,6 +723,11 @@ void thresholdFxn(void* ptr)
     vTaskDelete(NULL);
 }
 
+/***********************************************************************
+ * sensorFxn()
+ * @brief This function is used to collect data from temperature and humidity sensor
+ * @param ptr to data to be sent if any
+/***********************************************************************/
 void sensorFxn(void* ptr)
 {
     uint16_t data_op[2],i=0;
@@ -709,7 +782,11 @@ void sensorFxn(void* ptr)
     vTaskDelete(NULL);
 }
 
-// Main function
+/***********************************************************************
+ * main()
+ * @brief This function is where the code starts and used to initialize resources and start tasks
+ * @return 0 when exit
+/***********************************************************************/
 int main(void)
 {
     // Initialize system clock to 120 MHz
